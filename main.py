@@ -985,6 +985,13 @@ class QuestView(ui.LayoutView):
         self.user_id = user_id
         self.status_message = None
 
+        # ── Media Gallery For Banner Image ──────────────────────────────────
+        gallery = ui.MediaGallery(
+            discord.MediaGalleryItem(
+                media="https://images-ext-1.discordapp.net/external/cjyVUThezXyzrlExw2GxU8vfRiXmLPTJLsfJfCf5RF4/%3Fh%3D67b51b7107cc2c10dbfb945f7f3b4dda/https/cdn.myportfolio.com/de8e521ad6e548b34ce66798c00c0e11/b5e5143e-d6de-406c-9d97-c0695f35d87a_rwc_0x0x599x338x599.gif"
+            )
+        )
+
         container = ui.Container(
             ui.TextDisplay("## 🎮 Quest Auto-Completer"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
@@ -1023,11 +1030,7 @@ class QuestView(ui.LayoutView):
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             # ── Banner Image ──────────────────────────────────────────────────
-            ui.Image(
-                url="https://images-ext-1.discordapp.net/external/cjyVUThezXyzrlExw2GxU8vfRiXmLPTJLsfJfCf5RF4/%3Fh%3D67b51b7107cc2c10dbfb945f7f3b4dda/https/cdn.myportfolio.com/de8e521ad6e548b34ce66798c00c0e11/b5e5143e-d6de-406c-9d97-c0695f35d87a_rwc_0x0x599x338x599.gif",
-                width=599,
-                height=338
-            ),
+            gallery,
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             # ── Divider ──────────────────────────────────────────────────────
             ui.TextDisplay(
