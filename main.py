@@ -795,7 +795,6 @@ class QuestAutocompleter:
                 self.stopped_reason = "📭 No Quests Available"
                 self.should_stop = True
                 self.running = False
-                # Xóa completer khỏi active_completers
                 if self.bot:
                     active_completers.pop(str(self.discord_user_id), None)
                 await self.UpdateStatus()
@@ -842,7 +841,6 @@ class QuestAutocompleter:
                         Log(f"Remaining Completable Quests: {len(remaining_quests)}", "info")
                         
                         if len(remaining_quests) == 0:
-                            # Kiểm tra xem còn quest nào không (kể cả unsupported)
                             any_quests_left = any(
                                 not IsCompleted(q) and not IsQuestExpired(q)
                                 for q in self.quests
@@ -859,15 +857,12 @@ class QuestAutocompleter:
                                     await self.SendNoQuestsNotification()
                                     self.stopped_reason = "📭 No Quests Available"
                             else:
-                                # Vẫn còn quest nhưng không thể auto-accept (unsupported)
                                 Log("⚠️ Some quests are available but cannot be auto-accepted (unsupported tasks)", "warn")
                                 self.stopped_reason = "⚠️ Unsupported quests remaining"
                             
-                            # Dừng scan nếu không còn quest nào
                             if not any_quests_left:
                                 self.should_stop = True
                                 self.running = False
-                                # Xóa completer khỏi active_completers
                                 if self.bot:
                                     active_completers.pop(str(self.discord_user_id), None)
                                 await self.UpdateStatus()
@@ -898,7 +893,6 @@ class QuestAutocompleter:
     def CreateStatusView(self) -> ui.LayoutView:
         view = ui.LayoutView()
         
-        # ── Nếu đã dừng hoặc không còn quest ──────────────────────────────────
         if self.should_stop or not self.running:
             items = [
                 ui.TextDisplay(f"## {self.stopped_reason if self.stopped_reason else '📭 No Quests Available'}"),
@@ -922,7 +916,6 @@ class QuestAutocompleter:
             view.add_item(container)
             return view
         
-        # ── Bình thường ──────────────────────────────────────────────────────────
         items = [
             ui.TextDisplay("## 📊 Quest Status"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
@@ -937,7 +930,6 @@ class QuestAutocompleter:
             ),
         ]
         
-        # ── Currently Doing ──────────────────────────────────────────────────
         if self.current_quest and self.current_total > 0:
             percentage = (self.current_progress / self.current_total) * 100
             bar = self.CreateProgressBar(self.current_progress, self.current_total)
@@ -949,7 +941,6 @@ class QuestAutocompleter:
                 f"⏱️ {self.current_progress:.0f}/{self.current_total}s"
             ))
 
-        # ── Active Quests ────────────────────────────────────────────────────
         if self.quest_list:
             quest_text = ""
             active_count = 0
@@ -965,7 +956,6 @@ class QuestAutocompleter:
                 items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
                 items.append(ui.TextDisplay(f"**📋 Active Quests ({active_count})**\n{quest_text[:1500]}"))
 
-        # ── Recently Completed ──────────────────────────────────────────────
         if self.completed_quests_list:
             completed_text = ""
             for i, q in enumerate(self.completed_quests_list[-5:], 1):
@@ -1042,7 +1032,6 @@ class QuestView(ui.LayoutView):
     def __init__(self):
         super().__init__(timeout=None)
 
-        # ── Media Gallery For Banner Image ──────────────────────────────────
         gallery = ui.MediaGallery(
             discord.MediaGalleryItem(
                 media="https://images-ext-1.discordapp.net/external/cjyVUThezXyzrlExw2GxU8vfRiXmLPTJLsfJfCf5RF4/%3Fh%3D67b51b7107cc2c10dbfb945f7f3b4dda/https/cdn.myportfolio.com/de8e521ad6e548b34ce66798c00c0e11/b5e5143e-d6de-406c-9d97-c0695f35d87a_rwc_0x0x599x338x599.gif"
@@ -1052,7 +1041,6 @@ class QuestView(ui.LayoutView):
         container = ui.Container(
             ui.TextDisplay("## 🎮 Quest Auto-Completer"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
-            # ── Security Commitment ──────────────────────────────────────────
             ui.TextDisplay(
                 "**🔒 Security Commitment**\n"
                 "```\n"
@@ -1062,7 +1050,6 @@ class QuestView(ui.LayoutView):
                 "```"
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
-            # ── Instructions ──────────────────────────────────────────────────
             ui.TextDisplay(
                 "## 📋 Instructions\n"
                 "```yaml\n"
@@ -1074,7 +1061,6 @@ class QuestView(ui.LayoutView):
                 "```"
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
-            # ── Important Notes ──────────────────────────────────────────────
             ui.TextDisplay(
                 "**⚠️ Important Notes**\n"
                 "```diff\n"
@@ -1086,10 +1072,8 @@ class QuestView(ui.LayoutView):
                 "```"
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
-            # ── Banner Image ──────────────────────────────────────────────────
             gallery,
             ui.Separator(spacing=discord.SeparatorSpacing.small),
-            # ── Buttons ──────────────────────────────────────────────────────
             ui.ActionRow(
                 ui.Button(label="▶️ Start", style=discord.ButtonStyle.green, custom_id="quest_start"),
                 ui.Button(label="⏹️ Stop", style=discord.ButtonStyle.red, custom_id="quest_stop"),
@@ -1170,6 +1154,28 @@ async def on_ready():
         print(f'❌ Error Syncing Slash Commands: {e}')
 
 # ── Interaction Handler ──────────────────────────────────────────────────────
+async def SafeSend(interaction: discord.Interaction, view: ui.LayoutView, ephemeral: bool = True):
+    """Safe send message with fallback to followup"""
+    try:
+        await interaction.response.send_message(view=view, ephemeral=ephemeral)
+        return await interaction.original_response()
+    except discord.errors.NotFound:
+        return await interaction.followup.send(view=view, ephemeral=ephemeral)
+    except Exception as e:
+        Log(f"SafeSend Error: {e}", "warn")
+        return await interaction.followup.send(view=view, ephemeral=ephemeral)
+
+async def SafeEdit(message: discord.Message, view: ui.LayoutView):
+    """Safe edit message"""
+    try:
+        await message.edit(view=view)
+        return True
+    except discord.errors.NotFound:
+        return False
+    except Exception as e:
+        Log(f"SafeEdit Error: {e}", "warn")
+        return False
+
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
     if interaction.type != discord.InteractionType.component:
@@ -1180,7 +1186,7 @@ async def on_interaction(interaction: discord.Interaction):
     if custom_id == "quest_start":
         if interaction.user.id != OWNER_ID:
             view = BuildV2View("❌ Permission Denied", ["Only The Bot Owner Can Use This Button!"], color=discord.Color.red())
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
         modal = TokenModal()
@@ -1189,19 +1195,17 @@ async def on_interaction(interaction: discord.Interaction):
     elif custom_id == "quest_stop":
         if interaction.user.id != OWNER_ID:
             view = BuildV2View("❌ Permission Denied", ["Only The Bot Owner Can Use This Button!"], color=discord.Color.red())
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
         completer = active_completers.get(str(interaction.user.id))
         
         if not completer:
             view = BuildV2View("❌ Error", ["No Active Quest Session Found!"], color=discord.Color.red())
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
-        # ── Nếu đã dừng rồi, xóa completer và báo cần bắt đầu lại ──
         if not completer.running or completer.should_stop:
-            # Xóa completer khỏi active_completers
             active_completers.pop(str(interaction.user.id), None)
             view = BuildV2View(
                 "⏹️ Session Ended",
@@ -1211,44 +1215,43 @@ async def on_interaction(interaction: discord.Interaction):
                 ],
                 color=discord.Color.gold()
             )
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
-        # ── Nếu đang chạy thì dừng ──
         completer.Stop()
         completer.should_stop = True
         completer.stopped_reason = "⏹️ Stopped By User"
         
         view = completer.CreateStatusView()
         if completer.status_message:
-            try:
-                await completer.status_message.edit(view=view)
-                await interaction.response.defer()
-            except:
-                await interaction.response.send_message(view=view, ephemeral=True)
-                msg = await interaction.original_response()
-                completer.status_message = msg
+            if await SafeEdit(completer.status_message, view):
+                try:
+                    await interaction.response.defer()
+                except:
+                    pass
+            else:
+                await SafeSend(interaction, view)
         else:
-            await interaction.response.send_message(view=view, ephemeral=True)
-            msg = await interaction.original_response()
-            completer.status_message = msg
+            await SafeSend(interaction, view)
         
-        await interaction.followup.send("✅ Stopped Auto Quest Completion!", ephemeral=True)
+        try:
+            await interaction.followup.send("✅ Stopped Auto Quest Completion!", ephemeral=True)
+        except:
+            pass
     
     elif custom_id == "quest_status":
         if interaction.user.id != OWNER_ID:
             view = BuildV2View("❌ Permission Denied", ["Only The Bot Owner Can Use This Button!"], color=discord.Color.red())
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
         completer = active_completers.get(str(interaction.user.id))
         
         if not completer:
             view = BuildV2View("❌ Error", ["No Active Quest Session Found!"], color=discord.Color.red())
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
-        # ── Nếu đã dừng, hiển thị thông báo cần bắt đầu lại ──
         if completer.should_stop or not completer.running:
             view = BuildV2View(
                 "⏹️ Session Ended",
@@ -1258,26 +1261,22 @@ async def on_interaction(interaction: discord.Interaction):
                 ],
                 color=discord.Color.gold()
             )
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await SafeSend(interaction, view)
             return
         
         view = completer.CreateStatusView()
         
-        # ── Luôn hiển thị status ──
         if completer.status_message:
-            try:
-                await completer.status_message.edit(view=view)
-                await interaction.response.defer()
+            if await SafeEdit(completer.status_message, view):
+                try:
+                    await interaction.response.defer()
+                except:
+                    pass
                 return
-            except discord.errors.NotFound:
-                completer.status_message = None
-            except Exception as e:
-                Log(f"Error Editing Status Message: {e}", "warn")
+            else:
                 completer.status_message = None
         
-        # Nếu không có tin nhắn hoặc edit thất bại, gửi mới
-        await interaction.response.send_message(view=view, ephemeral=True)
-        msg = await interaction.original_response()
+        msg = await SafeSend(interaction, view)
         completer.status_message = msg
 
 # ── Slash Commands ─────────────────────────────────────────────────────────────
