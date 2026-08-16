@@ -319,8 +319,8 @@ class QuestAutocompleter:
     def __init__(self, api: DiscordAPI, user_id: str, discord_user_id: int):
         self.api = api
         self.completed_ids: set = set()
-        self.user_id = user_id
-        self.discord_user_id = discord_user_id
+        self.user_id = user_id  # Token owner ID
+        self.discord_user_id = discord_user_id  # Discord user ID who started session
         self.running = False
         self.should_stop = False
         self.stopped_reason = ""
@@ -1118,6 +1118,8 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
 
             completer = QuestAutocompleter(api, token_user_id, interaction.user.id)
             completer.bot = bot
+            
+            # ── LƯU THEO ID CỦA NGƯỜI DÙNG HIỆN TẠI ──
             active_completers[str(interaction.user.id)] = completer
 
             view = BuildV2View(
@@ -1139,6 +1141,27 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             view = BuildV2View("❌ Error", [str(e)], color=discord.Color.red())
             await interaction.followup.send(view=view, ephemeral=True)
 
+# ── Safe Send/Edit Helpers ──────────────────────────────────────────────────
+async def SafeSend(interaction: discord.Interaction, view: ui.LayoutView, ephemeral: bool = True):
+    try:
+        await interaction.response.send_message(view=view, ephemeral=ephemeral)
+        return await interaction.original_response()
+    except discord.errors.NotFound:
+        return await interaction.followup.send(view=view, ephemeral=ephemeral)
+    except Exception as e:
+        Log(f"SafeSend Error: {e}", "warn")
+        return await interaction.followup.send(view=view, ephemeral=ephemeral)
+
+async def SafeEdit(message: discord.Message, view: ui.LayoutView):
+    try:
+        await message.edit(view=view)
+        return True
+    except discord.errors.NotFound:
+        return False
+    except Exception as e:
+        Log(f"SafeEdit Error: {e}", "warn")
+        return False
+
 # ── Bot Events ─────────────────────────────────────────────────────────────────
 @bot.event
 async def on_ready():
@@ -1154,28 +1177,6 @@ async def on_ready():
         print(f'❌ Error Syncing Slash Commands: {e}')
 
 # ── Interaction Handler ──────────────────────────────────────────────────────
-async def SafeSend(interaction: discord.Interaction, view: ui.LayoutView, ephemeral: bool = True):
-    """Safe send message with fallback to followup"""
-    try:
-        await interaction.response.send_message(view=view, ephemeral=ephemeral)
-        return await interaction.original_response()
-    except discord.errors.NotFound:
-        return await interaction.followup.send(view=view, ephemeral=ephemeral)
-    except Exception as e:
-        Log(f"SafeSend Error: {e}", "warn")
-        return await interaction.followup.send(view=view, ephemeral=ephemeral)
-
-async def SafeEdit(message: discord.Message, view: ui.LayoutView):
-    """Safe edit message"""
-    try:
-        await message.edit(view=view)
-        return True
-    except discord.errors.NotFound:
-        return False
-    except Exception as e:
-        Log(f"SafeEdit Error: {e}", "warn")
-        return False
-
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
     if interaction.type != discord.InteractionType.component:
@@ -1184,20 +1185,12 @@ async def on_interaction(interaction: discord.Interaction):
     custom_id = interaction.data.get("custom_id", "")
     
     if custom_id == "quest_start":
-        if interaction.user.id != OWNER_ID:
-            view = BuildV2View("❌ Permission Denied", ["Only The Bot Owner Can Use This Button!"], color=discord.Color.red())
-            await SafeSend(interaction, view)
-            return
-        
+        # ── ANYONE CAN USE START ──
         modal = TokenModal()
         await interaction.response.send_modal(modal)
     
     elif custom_id == "quest_stop":
-        if interaction.user.id != OWNER_ID:
-            view = BuildV2View("❌ Permission Denied", ["Only The Bot Owner Can Use This Button!"], color=discord.Color.red())
-            await SafeSend(interaction, view)
-            return
-        
+        # ── ANYONE CAN USE STOP (ONLY THEIR SESSION) ──
         completer = active_completers.get(str(interaction.user.id))
         
         if not completer:
@@ -1240,11 +1233,7 @@ async def on_interaction(interaction: discord.Interaction):
             pass
     
     elif custom_id == "quest_status":
-        if interaction.user.id != OWNER_ID:
-            view = BuildV2View("❌ Permission Denied", ["Only The Bot Owner Can Use This Button!"], color=discord.Color.red())
-            await SafeSend(interaction, view)
-            return
-        
+        # ── ANYONE CAN USE STATUS (ONLY THEIR SESSION) ──
         completer = active_completers.get(str(interaction.user.id))
         
         if not completer:
