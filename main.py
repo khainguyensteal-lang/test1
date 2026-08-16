@@ -794,6 +794,10 @@ class QuestAutocompleter:
                 Log("No Quests Found", "info")
                 self.stopped_reason = "📭 No Quests Available"
                 self.should_stop = True
+                self.running = False
+                # Xóa completer khỏi active_completers
+                if self.bot:
+                    active_completers.pop(str(self.discord_user_id), None)
                 await self.UpdateStatus()
                 break
             else:
@@ -862,6 +866,10 @@ class QuestAutocompleter:
                             # Dừng scan nếu không còn quest nào
                             if not any_quests_left:
                                 self.should_stop = True
+                                self.running = False
+                                # Xóa completer khỏi active_completers
+                                if self.bot:
+                                    active_completers.pop(str(self.discord_user_id), None)
                                 await self.UpdateStatus()
                                 break
 
@@ -1191,22 +1199,19 @@ async def on_interaction(interaction: discord.Interaction):
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
-        # ── Nếu đã dừng rồi, chỉ hiển thị status ──
+        # ── Nếu đã dừng rồi, xóa completer và báo cần bắt đầu lại ──
         if not completer.running or completer.should_stop:
-            view = completer.CreateStatusView()
-            if completer.status_message:
-                try:
-                    await completer.status_message.edit(view=view)
-                    await interaction.response.defer()
-                    return
-                except:
-                    await interaction.response.send_message(view=view, ephemeral=True)
-                    msg = await interaction.original_response()
-                    completer.status_message = msg
-            else:
-                await interaction.response.send_message(view=view, ephemeral=True)
-                msg = await interaction.original_response()
-                completer.status_message = msg
+            # Xóa completer khỏi active_completers
+            active_completers.pop(str(interaction.user.id), None)
+            view = BuildV2View(
+                "⏹️ Session Ended",
+                [
+                    "Quest session has ended.",
+                    "Please click **Start** again to begin a new session."
+                ],
+                color=discord.Color.gold()
+            )
+            await interaction.response.send_message(view=view, ephemeral=True)
             return
         
         # ── Nếu đang chạy thì dừng ──
@@ -1240,6 +1245,19 @@ async def on_interaction(interaction: discord.Interaction):
         
         if not completer:
             view = BuildV2View("❌ Error", ["No Active Quest Session Found!"], color=discord.Color.red())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
+        # ── Nếu đã dừng, hiển thị thông báo cần bắt đầu lại ──
+        if completer.should_stop or not completer.running:
+            view = BuildV2View(
+                "⏹️ Session Ended",
+                [
+                    "No active quest session.",
+                    "Please click **Start** to begin a new session."
+                ],
+                color=discord.Color.gold()
+            )
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
