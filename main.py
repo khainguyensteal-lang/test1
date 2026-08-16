@@ -322,6 +322,7 @@ class QuestAutocompleter:
         self.user_id = user_id
         self.discord_user_id = discord_user_id
         self.running = False
+        self.should_stop = False
         self.status_message = None
         self.quests = []
         self.total_quests = 0
@@ -731,6 +732,7 @@ class QuestAutocompleter:
     # ── Run Quests ────────────────────────────────────────────────────────────
     async def RunQuests(self):
         self.running = True
+        self.should_stop = False
         self.completed_quests = 0
         self.completed_ids = set()
         self.completed_quests_list = []
@@ -744,7 +746,7 @@ class QuestAutocompleter:
         Log("=" * 60, "info")
 
         cycle = 0
-        while self.running:
+        while self.running and not self.should_stop:
             cycle += 1
             Log(f"── Scan #{cycle} ──", "info")
 
@@ -789,6 +791,8 @@ class QuestAutocompleter:
             if not self.quests:
                 Log("No Quests Found", "info")
                 await self.UpdateStatus("📭 No Quests Available")
+                self.should_stop = True
+                break
             else:
                 enrolled_count = sum(1 for q in self.quests if IsEnrolled(q))
                 completed_count = sum(1 for q in self.quests if IsCompleted(q))
@@ -814,7 +818,7 @@ class QuestAutocompleter:
                 if actionable:
                     Log(f"\n{len(actionable)} Quest(s) Need Completion:", "info")
                     for q in actionable:
-                        if not self.running:
+                        if not self.running or self.should_stop:
                             break
                         await self.ProcessQuest(q)
                 else:
@@ -835,16 +839,18 @@ class QuestAutocompleter:
                                 self.all_quests_completed = True
                                 Log("🎉 All Quests Completed! Sending DM Notification...", "ok")
                                 await self.SendDMNotification()
+                                self.should_stop = True
                             else:
                                 Log("📭 No Quests Available To Complete", "info")
                                 await self.SendNoQuestsNotification()
+                                self.should_stop = True
 
-            if not self.running:
+            if not self.running or self.should_stop:
                 break
 
             Log(f"\nWaiting {POLL_INTERVAL}s...\n", "info")
             for _ in range(POLL_INTERVAL):
-                if not self.running:
+                if not self.running or self.should_stop:
                     break
                 await asyncio.sleep(1)
 
@@ -981,9 +987,6 @@ async def OnAppCommandError(interaction: discord.Interaction, error: app_command
 class QuestView(ui.LayoutView):
     def __init__(self):
         super().__init__(timeout=None)
-        self.completer = None
-        self.user_id = None
-        self.status_message = None
 
         # ── Media Gallery For Banner Image ──────────────────────────────────
         gallery = ui.MediaGallery(
@@ -1031,27 +1034,6 @@ class QuestView(ui.LayoutView):
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             # ── Banner Image ──────────────────────────────────────────────────
             gallery,
-            ui.Separator(spacing=discord.SeparatorSpacing.small),
-            # ── Divider ──────────────────────────────────────────────────────
-            ui.TextDisplay(
-                "```\n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
-                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
-                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
-                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "   █████████████████████████████████████████████████████████████\n"
-                "```"
-            ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             # ── Buttons ──────────────────────────────────────────────────────
             ui.ActionRow(
