@@ -323,6 +323,7 @@ class QuestAutocompleter:
         self.discord_user_id = discord_user_id
         self.running = False
         self.should_stop = False
+        self.stopped_reason = ""
         self.status_message = None
         self.quests = []
         self.total_quests = 0
@@ -733,6 +734,7 @@ class QuestAutocompleter:
     async def RunQuests(self):
         self.running = True
         self.should_stop = False
+        self.stopped_reason = ""
         self.completed_quests = 0
         self.completed_ids = set()
         self.completed_quests_list = []
@@ -790,8 +792,9 @@ class QuestAutocompleter:
 
             if not self.quests:
                 Log("No Quests Found", "info")
-                await self.UpdateStatus("📭 No Quests Available")
+                self.stopped_reason = "📭 No Quests Available"
                 self.should_stop = True
+                await self.UpdateStatus()
                 break
             else:
                 enrolled_count = sum(1 for q in self.quests if IsEnrolled(q))
@@ -799,6 +802,7 @@ class QuestAutocompleter:
                 completable_count = sum(1 for q in self.quests if IsCompletable(q))
                 expired_count = len(self.expired_quests_list)
                 self.enrolled_quests = enrolled_count
+                self.completed_quests = completed_count
 
                 Log(
                     f"Total: {total} Quests | Enrolled: {enrolled_count} | "
@@ -823,7 +827,6 @@ class QuestAutocompleter:
                         await self.ProcessQuest(q)
                 else:
                     Log("No Quests Need Completion At This Time", "info")
-                    await self.UpdateStatus("📭 No Quests Available")
                     
                     # ── Check And Send DM ──
                     if not self.dm_sent:
@@ -835,15 +838,33 @@ class QuestAutocompleter:
                         Log(f"Remaining Completable Quests: {len(remaining_quests)}", "info")
                         
                         if len(remaining_quests) == 0:
-                            if self.completed_quests > 0:
-                                self.all_quests_completed = True
-                                Log("🎉 All Quests Completed! Sending DM Notification...", "ok")
-                                await self.SendDMNotification()
-                                self.should_stop = True
+                            # Kiểm tra xem còn quest nào không (kể cả unsupported)
+                            any_quests_left = any(
+                                not IsCompleted(q) and not IsQuestExpired(q)
+                                for q in self.quests
+                            )
+                            
+                            if not any_quests_left:
+                                if self.completed_quests > 0:
+                                    self.all_quests_completed = True
+                                    Log("🎉 All Quests Completed! Sending DM Notification...", "ok")
+                                    await self.SendDMNotification()
+                                    self.stopped_reason = "🎉 All Quests Completed!"
+                                else:
+                                    Log("📭 No Quests Available To Complete", "info")
+                                    await self.SendNoQuestsNotification()
+                                    self.stopped_reason = "📭 No Quests Available"
                             else:
-                                Log("📭 No Quests Available To Complete", "info")
-                                await self.SendNoQuestsNotification()
+                                # Vẫn còn quest nhưng không thể auto-accept (unsupported)
+                                Log("⚠️ Some quests are available but cannot be auto-accepted (unsupported tasks)", "warn")
+                                self.stopped_reason = "⚠️ Unsupported quests remaining"
+                                # Không dừng scan, tiếp tục chờ
+                            
+                            # Dừng scan nếu không còn quest nào
+                            if not any_quests_left:
                                 self.should_stop = True
+                                await self.UpdateStatus()
+                                break
 
             if not self.running or self.should_stop:
                 break
@@ -855,7 +876,7 @@ class QuestAutocompleter:
                 await asyncio.sleep(1)
 
         Log("Stopped Auto Quest Completion.", "info")
-        await self.UpdateStatus("⏹️ Stopped")
+        await self.UpdateStatus()
 
     # ── Progress Bar ──────────────────────────────────────────────────────────
     def CreateProgressBar(self, progress: float, total: float, length: int = 15) -> str:
@@ -869,6 +890,32 @@ class QuestAutocompleter:
     # ── Create Status View ────────────────────────────────────────────────────
     def CreateStatusView(self) -> ui.LayoutView:
         view = ui.LayoutView()
+        
+        # ── Nếu đã dừng hoặc không còn quest ──────────────────────────────────
+        if self.should_stop or not self.running:
+            items = [
+                ui.TextDisplay(f"## {self.stopped_reason if self.stopped_reason else '📭 No Quests Available'}"),
+                ui.Separator(spacing=discord.SeparatorSpacing.small),
+                ui.TextDisplay(
+                    f"**📊 Statistics**\n"
+                    f"Total Quests: {self.total_quests}\n"
+                    f"Completed: {self.completed_quests}\n"
+                    f"Expired: {len(self.expired_quests_list)}\n"
+                    f"Available: 0"
+                ),
+                ui.Separator(spacing=discord.SeparatorSpacing.small),
+                ui.TextDisplay("⏹️ Stopped")
+            ]
+            
+            if self.all_quests_completed:
+                items.insert(2, ui.TextDisplay("**🎉 All quests completed! DM notification sent!**"))
+            
+            color = discord.Color.gold()
+            container = ui.Container(*items, accent_color=color)
+            view.add_item(container)
+            return view
+        
+        # ── Bình thường ──────────────────────────────────────────────────────────
         items = [
             ui.TextDisplay("## 📊 Quest Status"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
@@ -1151,8 +1198,11 @@ async def on_interaction(interaction: discord.Interaction):
             return
         
         completer.Stop()
+        completer.should_stop = True
+        completer.stopped_reason = "⏹️ Stopped By User"
         view = BuildV2View("✅ Stopped", ["Stopped Auto Quest Completion."], color=discord.Color.green())
         await interaction.response.send_message(view=view, ephemeral=True)
+        await completer.UpdateStatus()
     
     elif custom_id == "quest_status":
         if interaction.user.id != OWNER_ID:
@@ -1169,27 +1219,19 @@ async def on_interaction(interaction: discord.Interaction):
         
         view = completer.CreateStatusView()
         
-        message_exists = False
+        # Kiểm tra tin nhắn cũ
         if completer.status_message:
-            try:
-                await completer.status_message.fetch()
-                message_exists = True
-            except discord.errors.NotFound:
-                completer.status_message = None
-                message_exists = False
-            except Exception as e:
-                Log(f"Error Checking Message: {e}", "warn")
-                message_exists = False
-        
-        if message_exists:
             try:
                 await completer.status_message.edit(view=view)
                 await interaction.response.defer()
                 return
+            except discord.errors.NotFound:
+                completer.status_message = None
             except Exception as e:
                 Log(f"Error Editing Status Message: {e}", "warn")
                 completer.status_message = None
         
+        # Nếu không có tin nhắn hoặc edit thất bại, gửi mới
         await interaction.response.send_message(view=view, ephemeral=True)
         msg = await interaction.original_response()
         completer.status_message = msg
