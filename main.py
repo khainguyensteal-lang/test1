@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-CTDOTEAM - Discord Quest Auto-Completer Bot
+CTDOTEAM - Discord Quest Auto-Completer Bot - Components V2 Style
 """
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 import asyncio
 import requests
@@ -16,8 +16,12 @@ import base64
 import traceback
 from datetime import datetime, timezone
 from typing import Optional
+import os
 
 # ── Configuration ──────────────────────────────────────────────────────────────
+TOKEN = os.getenv("DISCORD_TOKEN", "")
+OWNER_ID = int(os.getenv("BOT_OWNER_ID", ""))
+
 API_BASE = "https://discord.com/api/v9"
 POLL_INTERVAL = 60
 HEARTBEAT_INTERVAL = 20
@@ -38,8 +42,29 @@ UNSUPPORTED_TASKS = [
     "LAUNCH_QUEST",
 ]
 
-TOKEN = "YOUR_BOT_TOKEN_HERE"
-OWNER_ID = 1512303397120901191
+# ── Components V2 Helpers ─────────────────────────────────────────────────────
+def build_v2_view(title: str, lines: list[str], color: discord.Color = discord.Color.gold()) -> ui.LayoutView:
+    view = ui.LayoutView()
+    container = ui.Container(
+        ui.TextDisplay(f"## {title}"),
+        ui.Separator(spacing=discord.SeparatorSpacing.small),
+        ui.TextDisplay("\n".join(lines)),
+        accent_color=color,
+    )
+    view.add_item(container)
+    return view
+
+def build_status_view(title: str, fields: dict, color: discord.Color = discord.Color.gold()) -> ui.LayoutView:
+    view = ui.LayoutView()
+    items = [ui.TextDisplay(f"## {title}"), ui.Separator(spacing=discord.SeparatorSpacing.small)]
+    
+    for key, value in fields.items():
+        items.append(ui.TextDisplay(f"**{key}**\n{value}"))
+        items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
+    
+    container = ui.Container(*items, accent_color=color)
+    view.add_item(container)
+    return view
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 class Colors:
@@ -292,8 +317,8 @@ class QuestAutocompleter:
     def __init__(self, api: DiscordAPI, user_id: str, discord_user_id: int):
         self.api = api
         self.completed_ids: set = set()
-        self.user_id = user_id  # Discord user ID from token
-        self.discord_user_id = discord_user_id  # Discord user ID of the person using bot
+        self.user_id = user_id
+        self.discord_user_id = discord_user_id
         self.running = False
         self.status_message = None
         self.quests = []
@@ -310,50 +335,61 @@ class QuestAutocompleter:
         self.dm_sent = False
         self.bot = None
 
+    # ── Update Quest List Real-time ──────────────────────────────────────────
+    def update_quest_progress(self, name: str, progress: float):
+        for q in self.quest_list:
+            if q["name"] == name:
+                q["progress"] = progress
+                break
+
     # ── Send DM Notification ──────────────────────────────────────────────────
     async def send_dm_notification(self):
-        """Send DM notification when all quests are completed"""
         try:
-            # Get the user from Discord API
             user = await self.bot.fetch_user(self.discord_user_id)
             
-            embed = discord.Embed(
-                title="🎉 All Quests Completed!",
-                description="Congratulations! All available quests have been completed!",
-                color=discord.Color.green()
-            )
+            fields = {
+                "📊 Summary": f"✅ Total Completed: {self.completed_quests}\n📋 Total Quests: {self.total_quests}\n⌛ Expired Quests: {len(self.expired_quests_list)}"
+            }
             
-            embed.add_field(
-                name="📊 Summary",
-                value=f"✅ Total Completed: {self.completed_quests}\n"
-                      f"📋 Total Quests: {self.total_quests}\n"
-                      f"⌛ Expired Quests: {len(self.expired_quests_list)}",
-                inline=False
-            )
-            
-            # Show completed quests list
             if self.completed_quests_list:
                 completed_text = ""
                 for i, q in enumerate(self.completed_quests_list[-10:], 1):
                     completed_text += f"✅ {q['name'][:30]} — ⏰ {q['completed_at']}\n"
-                
-                if completed_text:
-                    embed.add_field(
-                        name=f"🏆 Completed Quests ({len(self.completed_quests_list)})",
-                        value=completed_text[:1024],
-                        inline=False
-                    )
+                fields["🏆 Completed Quests"] = completed_text[:1024]
             
-            embed.set_footer(text="CTDOTEAM Quest Bot - All Done! 🎊")
+            view = build_status_view("🎉 All Quests Completed!", fields, color=discord.Color.gold())
             
-            await user.send(embed=embed)
-            log(f"✅ DM notification sent to user {self.discord_user_id}", "ok")
+            await user.send(view=view)
+            log(f"DM notification sent to user {self.discord_user_id}", "ok")
             self.dm_sent = True
             
         except discord.Forbidden:
-            log(f"⚠️ Cannot send DM to user {self.discord_user_id} (DMs disabled)", "warn")
+            log(f"Cannot send DM to user {self.discord_user_id} (DMs disabled)", "warn")
         except Exception as e:
-            log(f"❌ Error sending DM: {e}", "error")
+            log(f"Error sending DM: {e}", "error")
+
+    async def send_no_quests_notification(self):
+        try:
+            user = await self.bot.fetch_user(self.discord_user_id)
+            
+            fields = {
+                "📊 Status": f"📭 No quests available",
+                "📋 Statistics": f"Total Quests: {self.total_quests}\n"
+                                f"Completed: {self.completed_quests}\n"
+                                f"Expired: {len(self.expired_quests_list)}\n"
+                                f"Available: 0"
+            }
+            
+            view = build_status_view("📭 No Quests Available", fields, color=discord.Color.gold())
+            
+            await user.send(view=view)
+            log(f"DM notification sent to user {self.discord_user_id} (No quests)", "ok")
+            self.dm_sent = True
+            
+        except discord.Forbidden:
+            log(f"Cannot send DM to user {self.discord_user_id} (DMs disabled)", "warn")
+        except Exception as e:
+            log(f"Error sending DM: {e}", "error")
 
     # ── Fetch Quests ──────────────────────────────────────────────────────────
     def fetch_quests(self) -> list:
@@ -485,10 +521,12 @@ class QuestAutocompleter:
                         if body.get("completed_at"):
                             log(f"✅ Completed: {Colors.BOLD}{name}{Colors.RESET}", "ok")
                             self.current_progress = seconds_needed
+                            self.update_quest_progress(name, seconds_needed)
                             await self.update_status()
                             return
                         seconds_done = min(seconds_needed, timestamp)
                         self.current_progress = seconds_done
+                        self.update_quest_progress(name, seconds_done)
                         log(f"  [{name}] {seconds_done:.0f}/{seconds_needed}s", "progress")
                         await self.update_status()
                     elif r.status_code == 429:
@@ -510,6 +548,7 @@ class QuestAutocompleter:
         except Exception:
             pass
         self.current_progress = seconds_needed
+        self.update_quest_progress(name, seconds_needed)
         log(f"✅ Completed: {Colors.BOLD}{name}{Colors.RESET}", "ok")
         await self.update_status()
 
@@ -546,12 +585,14 @@ class QuestAutocompleter:
                     if progress_data and task_type in progress_data:
                         seconds_done = progress_data[task_type].get("value", seconds_done)
                         self.current_progress = seconds_done
+                        self.update_quest_progress(name, seconds_done)
                     log(f"  [{name}] {seconds_done:.0f}/{seconds_needed}s", "progress")
                     await self.update_status()
 
                     if body.get("completed_at") or seconds_done >= seconds_needed:
                         log(f"✅ Completed: {Colors.BOLD}{name}{Colors.RESET}", "ok")
                         self.current_progress = seconds_needed
+                        self.update_quest_progress(name, seconds_needed)
                         await self.update_status()
                         return
 
@@ -576,6 +617,7 @@ class QuestAutocompleter:
         except Exception:
             pass
         self.current_progress = seconds_needed
+        self.update_quest_progress(name, seconds_needed)
         log(f"✅ Completed: {Colors.BOLD}{name}{Colors.RESET}", "ok")
         await self.update_status()
 
@@ -611,6 +653,7 @@ class QuestAutocompleter:
                     if progress_data and "PLAY_ACTIVITY" in progress_data:
                         seconds_done = progress_data["PLAY_ACTIVITY"].get("value", seconds_done)
                         self.current_progress = seconds_done
+                        self.update_quest_progress(name, seconds_done)
                     log(f"  [{name}] {seconds_done:.0f}/{seconds_needed}s", "progress")
                     await self.update_status()
 
@@ -636,6 +679,7 @@ class QuestAutocompleter:
         except Exception:
             pass
         self.current_progress = seconds_needed
+        self.update_quest_progress(name, seconds_needed)
         log(f"✅ Completed: {Colors.BOLD}{name}{Colors.RESET}", "ok")
         await self.update_status()
 
@@ -742,7 +786,7 @@ class QuestAutocompleter:
 
             if not self.quests:
                 log("No quests found", "info")
-                await self.update_status()
+                await self.update_status("No quests found")
             else:
                 enrolled_count = sum(1 for q in self.quests if is_enrolled(q))
                 completed_count = sum(1 for q in self.quests if is_completed(q))
@@ -773,21 +817,29 @@ class QuestAutocompleter:
                         await self.process_quest(q)
                 else:
                     log("No quests need completion at this time", "info")
-                    await self.update_status()
-
-                # ── Check if all quests are completed ──────────────────────
-                if not actionable and not self.all_quests_completed and self.completed_quests > 0:
-                    # Check if there are any enrolled or available quests left
-                    remaining_quests = [
-                        q for q in self.quests
-                        if (is_enrolled(q) or is_completable(q)) and not is_completed(q) and not is_quest_expired(q)
-                    ]
+                    await self.update_status("No quests need completion")
                     
-                    if not remaining_quests:
-                        self.all_quests_completed = True
-                        log("🎉 All quests completed! Sending DM notification...", "ok")
-                        await self.send_dm_notification()
-                        # Don't stop bot, keep running for new quests
+                    # ── KIỂM TRA VÀ GỬI DM ──
+                    if not self.dm_sent:
+                        # Đếm số quest còn lại có thể làm
+                        remaining_quests = [
+                            q for q in self.quests
+                            if not is_completed(q) and not is_quest_expired(q) and is_completable(q)
+                        ]
+                        
+                        log(f"Remaining completable quests: {len(remaining_quests)}", "info")
+                        
+                        # Nếu không còn quest nào có thể làm
+                        if len(remaining_quests) == 0:
+                            if self.completed_quests > 0:
+                                # Đã hoàn thành tất cả quest
+                                self.all_quests_completed = True
+                                log("🎉 All quests completed! Sending DM notification...", "ok")
+                                await self.send_dm_notification()
+                            else:
+                                # Chưa có quest nào hoàn thành, không có quest để làm
+                                log("📭 No quests available to complete", "info")
+                                await self.send_no_quests_notification()
 
             if not self.running:
                 break
@@ -799,132 +851,100 @@ class QuestAutocompleter:
                 await asyncio.sleep(1)
 
         log("Stopped auto quest completion.", "info")
-        await self.update_status()
+        await self.update_status("Stopped")
 
     # ── Progress Bar ──────────────────────────────────────────────────────────
-    def create_progress_bar(self, progress: float, total: float, length: int = 20) -> str:
+    def create_progress_bar(self, progress: float, total: float, length: int = 15) -> str:
         if total <= 0:
-            return "█" * length
+            return "⬜" * length
         percentage = min(progress / total, 1.0)
         filled = int(percentage * length)
         empty = length - filled
-        return "█" * filled + "░" * empty
+        return "🟧" * filled + "⬜" * empty
 
-    # ── Create Status Embed ──────────────────────────────────────────────────
-    def create_status_embed(self) -> discord.Embed:
-        embed = discord.Embed(
-            title="📊 Quest Status",
-            color=discord.Color.blue() if self.running else discord.Color.red()
-        )
+    # ── Create Status View ────────────────────────────────────────────────────
+    def create_status_view(self) -> ui.LayoutView:
+        view = ui.LayoutView()
+        items = [
+            ui.TextDisplay("## 📊 Quest Status"),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            ui.TextDisplay(f"**Status:** {'🟢 Running' if self.running else '🔴 Stopped'}"),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            ui.TextDisplay(
+                f"**📋 Statistics**\n"
+                f"Total Quests: {self.total_quests}\n"
+                f"Enrolled: {self.enrolled_quests}\n"
+                f"Completed: {self.completed_quests}\n"
+                f"Expired: {len(self.expired_quests_list)}"
+            ),
+        ]
         
-        embed.add_field(
-            name="📊 Status",
-            value="🟢 Running" if self.running else "🔴 Stopped",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="📋 Statistics",
-            value=f"Total Quests: {self.total_quests}\n"
-                  f"Enrolled: {self.enrolled_quests}\n"
-                  f"Completed: {self.completed_quests}\n"
-                  f"Expired: {len(self.expired_quests_list)}",
-            inline=False
-        )
-        
+        # ── Currently Doing ──────────────────────────────────────────────────
         if self.current_quest and self.current_total > 0:
             percentage = (self.current_progress / self.current_total) * 100
-            bar = self.create_progress_bar(self.current_progress, self.current_total, 15)
-            embed.add_field(
-                name="🔄 Currently Doing",
-                value=f"**{self.current_quest}**\n"
-                      f"`{bar}` {percentage:.1f}%\n"
-                      f"⏱️ {self.current_progress:.0f}/{self.current_total}s",
-                inline=False
-            )
+            bar = self.create_progress_bar(self.current_progress, self.current_total)
+            items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
+            items.append(ui.TextDisplay(
+                f"**🔄 Currently Doing**\n"
+                f"**{self.current_quest}**\n"
+                f"`{bar}` {percentage:.1f}%\n"
+                f"⏱️ {self.current_progress:.0f}/{self.current_total}s"
+            ))
 
+        # ── Active Quests ────────────────────────────────────────────────────
         if self.quest_list:
             quest_text = ""
-            for q in self.quest_list[:15]:
-                if q["is_expired"]:
-                    status_icon = "⌛"
-                elif q["status"] == "✅ Completed":
-                    status_icon = "✅"
-                elif q["status"] == "▶ Enrolled":
-                    status_icon = "▶"
-                elif q["status"] == "🚫 Unsupported":
-                    status_icon = "🚫"
-                else:
-                    status_icon = "⭕"
-                
-                if q["total"] > 0 and q["status"] == "▶ Enrolled" and not q["is_expired"]:
-                    bar = self.create_progress_bar(q["progress"], q["total"], 10)
-                    quest_text += f"`{status_icon}` {q['name'][:20]} `{bar}` {int((q['progress']/q['total'])*100)}%\n"
-                else:
-                    quest_text += f"`{status_icon}` {q['name'][:20]} {q['status']}\n"
+            active_count = 0
+            for q in self.quest_list[:20]:
+                if q["status"] == "▶ Enrolled" and not q["is_expired"] and q["total"] > 0:
+                    active_count += 1
+                    bar = self.create_progress_bar(q["progress"], q["total"])
+                    percent = int((q["progress"] / q["total"]) * 100)
+                    quest_text += f"▶ **{q['name'][:30]}**\n"
+                    quest_text += f"   `{bar}` {percent}% ({q['progress']:.0f}/{q['total']}s)\n"
             
             if quest_text:
-                embed.add_field(
-                    name="📋 Quest List",
-                    value=quest_text[:1024],
-                    inline=False
-                )
+                items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
+                items.append(ui.TextDisplay(f"**📋 Active Quests ({active_count})**\n{quest_text[:1500]}"))
 
+        # ── Recently Completed ──────────────────────────────────────────────
         if self.completed_quests_list:
             completed_text = ""
-            for i, q in enumerate(self.completed_quests_list[-10:], 1):
+            for i, q in enumerate(self.completed_quests_list[-5:], 1):
                 completed_text += f"✅ {q['name'][:25]} — ⏰ {q['completed_at']}\n"
             
             if completed_text:
-                embed.add_field(
-                    name=f"🏆 Completed Quests ({len(self.completed_quests_list)})",
-                    value=completed_text[:1024],
-                    inline=False
-                )
-
-        if self.expired_quests_list:
-            expired_text = ""
-            for i, q in enumerate(self.expired_quests_list[-10:], 1):
-                expired_text += f"⌛ {q['name'][:25]} — Expired\n"
-            
-            if expired_text:
-                embed.add_field(
-                    name=f"⌛ Expired Quests ({len(self.expired_quests_list)})",
-                    value=expired_text[:1024],
-                    inline=False
-                )
+                items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
+                items.append(ui.TextDisplay(f"**🏆 Recently Completed ({len(self.completed_quests_list)})**\n{completed_text[:1024]}"))
 
         if self.all_quests_completed:
-            embed.add_field(
-                name="🎉 Status",
-                value="**All quests completed!** 🎊\nDM notification sent!",
-                inline=False
-            )
+            items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
+            items.append(ui.TextDisplay("**🎉 All quests completed! 🎊**\nDM notification sent!"))
 
-        if self.running:
-            embed.set_footer(text="🔄 Running... Click Stop to stop")
-        else:
-            embed.set_footer(text="⏹️ Stopped")
+        items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
+        items.append(ui.TextDisplay(
+            "🔄 Running... Click Stop to stop" if self.running else "⏹️ Stopped"
+        ))
 
-        return embed
+        color = discord.Color.gold()
+        container = ui.Container(*items, accent_color=color)
+        view.add_item(container)
+        return view
 
     # ── Update Status ─────────────────────────────────────────────────────────
     async def update_status(self, custom_status: str = None):
         if not self.status_message:
             return
 
-        embed = self.create_status_embed()
-
-        if custom_status:
-            embed.add_field(name="📝 Message", value=custom_status, inline=False)
+        view = self.create_status_view()
 
         try:
-            await self.status_message.edit(embed=embed)
+            await self.status_message.edit(view=view)
         except discord.errors.NotFound:
-            log("⚠️ Status message deleted, cannot update!", "warn")
+            log("Status message deleted, cannot update!", "warn")
         except discord.errors.HTTPException as e:
             if "401" in str(e) or "50027" in str(e):
-                log("⚠️ Cannot update status due to webhook error. Bot still running normally!", "warn")
+                log("Cannot update status due to webhook error. Bot still running normally!", "warn")
             else:
                 raise e
 
@@ -936,82 +956,63 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents, owner_id=OWNER_ID)
 
 active_completers = {}
 
-def is_owner(interaction: discord.Interaction) -> bool:
-    return interaction.user.id == OWNER_ID
+def is_owner():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if interaction.user.id != bot.owner_id:
+            raise app_commands.CheckFailure("Owner Only")
+        return True
+    return app_commands.check(predicate)
 
-# ── Views ──────────────────────────────────────────────────────────────────────
-class QuestView(discord.ui.View):
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        text = "Only The Bot Owner Can Use This Command."
+    else:
+        text = f"Something Went Wrong: {error}"
+    view = build_v2_view("❌ Error", [text], color=discord.Color.gold())
+    if interaction.response.is_done():
+        await interaction.followup.send(view=view, ephemeral=True)
+    else:
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+# ── Quest View ──────────────────────────────────────────────────────────────────
+class QuestView(ui.LayoutView):
     def __init__(self, completer: QuestAutocompleter = None, user_id: str = None):
         super().__init__(timeout=None)
         self.completer = completer
         self.user_id = user_id
         self.status_message = None
 
-    @discord.ui.button(label="▶️ Start", style=discord.ButtonStyle.green)
-    async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.completer and self.completer.running:
-            await interaction.response.send_message("⚠️ Quest is already running!", ephemeral=True)
-            return
-
-        modal = TokenModal()
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="⏹️ Stop", style=discord.ButtonStyle.red)
-    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.user_id:
-            await interaction.response.send_message("❌ No session found!", ephemeral=True)
-            return
-            
-        if interaction.user.id != int(self.user_id):
-            await interaction.response.send_message("❌ You don't have permission! Only the token owner can stop.", ephemeral=True)
-            return
-
-        if self.completer and self.completer.running:
-            self.completer.stop()
-            await interaction.response.send_message("✅ Stopped auto quest completion!", ephemeral=True)
-            
-            embed = discord.Embed(
-                title="🎮 Quest Auto-Completer Status",
-                color=discord.Color.red(),
-                description="⏹️ Stopped auto quest completion."
-            )
-            await interaction.message.edit(embed=embed)
-        else:
-            await interaction.response.send_message("⚠️ Quest is not running!", ephemeral=True)
-
-    @discord.ui.button(label="📊 Status", style=discord.ButtonStyle.blurple)
-    async def status_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.user_id:
-            await interaction.response.send_message("❌ No session found!", ephemeral=True)
-            return
-            
-        if interaction.user.id != int(self.user_id):
-            await interaction.response.send_message(
-                "❌ You don't have permission! Only the token owner can view status.",
-                ephemeral=True
-            )
-            return
-
-        if not self.completer:
-            await interaction.response.send_message("❌ No session found!", ephemeral=True)
-            return
-
-        embed = self.completer.create_status_embed()
-        
-        if not self.completer.status_message:
-            msg = await interaction.response.send_message(embed=embed, ephemeral=True)
-            self.completer.status_message = msg
-        else:
-            try:
-                await self.completer.status_message.edit(embed=embed)
-                await interaction.response.send_message("✅ Status updated!", ephemeral=True)
-            except:
-                msg = await interaction.response.send_message(embed=embed, ephemeral=True)
-                self.completer.status_message = msg
+        container = ui.Container(
+            ui.TextDisplay("## 🎮 Quest Auto-Completer"),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            ui.TextDisplay(
+                "Automatically scan, enroll, and complete Discord quests!\n\n"
+                "**📋 Instructions**\n"
+                "1. Click **Start** to begin\n"
+                "2. Enter your Discord token\n"
+                "3. Bot will automatically complete quests for you\n"
+                "4. Click **Status** to view progress\n"
+                "5. Get **DM notification** when all quests are done!\n\n"
+                "**⚠️ Notes**\n"
+                "• Token is only used in this session\n"
+                "• Bot will auto-enroll and complete quests\n"
+                "• Use **Stop** button to stop anytime\n"
+                "• DM will be sent when all quests are completed"
+            ),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            ui.ActionRow(
+                ui.Button(label="▶️ Start", style=discord.ButtonStyle.green, custom_id="quest_start"),
+                ui.Button(label="⏹️ Stop", style=discord.ButtonStyle.red, custom_id="quest_stop"),
+                ui.Button(label="📊 Status", style=discord.ButtonStyle.blurple, custom_id="quest_status"),
+            ),
+            accent_color=discord.Color.gold(),
+        )
+        self.add_item(container)
 
 # ── Token Modal ──────────────────────────────────────────────────────────────
 class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
@@ -1026,7 +1027,8 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
         token = self.token_input.value.strip()
         
         if not token:
-            await interaction.response.send_message("❌ Token cannot be empty!", ephemeral=True)
+            view = build_v2_view("❌ Error", ["Token cannot be empty!"], color=discord.Color.gold())
+            await interaction.response.send_message(view=view, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -1036,7 +1038,8 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             api = DiscordAPI(token, build_number)
             
             if not api.validate_token():
-                await interaction.followup.send("❌ Invalid token! Please check and try again.", ephemeral=True)
+                view = build_v2_view("❌ Error", ["Invalid token! Please check and try again."], color=discord.Color.gold())
+                await interaction.followup.send(view=view, ephemeral=True)
                 return
 
             r = api.get("/users/@me")
@@ -1044,20 +1047,22 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             token_username = user_data.get("username", "Unknown")
             token_user_id = user_data.get("id", "Unknown")
 
-            # Create completer with both token user ID and Discord user ID
             completer = QuestAutocompleter(api, token_user_id, interaction.user.id)
             completer.bot = bot
             active_completers[str(interaction.user.id)] = completer
 
-            embed = discord.Embed(
-                title="✅ Success",
-                color=discord.Color.green(),
-                description=f"Successfully logged in with token of **{token_username}**!\n\n"
-                           f"Click **📊 Status** to view quest progress.\n"
-                           f"You will receive a **DM notification** when all quests are completed! 📬"
+            view = build_v2_view(
+                "✅ Success",
+                [
+                    f"Successfully logged in with token of **{token_username}**!",
+                    "",
+                    "Click **📊 Status** to view quest progress.",
+                    "You will receive a **DM notification** when all quests are completed! 📬"
+                ],
+                color=discord.Color.gold()
             )
             
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(view=view, ephemeral=True)
 
             asyncio.create_task(completer.run_quests())
 
@@ -1065,7 +1070,8 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             await interaction.edit_original_response(view=new_view)
 
         except Exception as e:
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            view = build_v2_view("❌ Error", [str(e)], color=discord.Color.gold())
+            await interaction.followup.send(view=view, ephemeral=True)
 
 # ── Bot Events ─────────────────────────────────────────────────────────────────
 @bot.event
@@ -1073,7 +1079,7 @@ async def on_ready():
     print(f'✅ Bot logged in successfully!')
     print(f'📊 Bot Name: {bot.user.name}')
     print(f'🆔 Bot ID: {bot.user.id}')
-    print(f'👑 Owner ID: {OWNER_ID}')
+    print(f'👑 Owner ID: {bot.owner_id}')
     print('─' * 40)
     try:
         synced = await bot.tree.sync()
@@ -1081,97 +1087,117 @@ async def on_ready():
     except Exception as e:
         print(f'❌ Error syncing slash commands: {e}')
 
+# ── Interaction Handler ──────────────────────────────────────────────────────
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if interaction.type != discord.InteractionType.component:
+        return
+    
+    custom_id = interaction.data.get("custom_id", "")
+    
+    if custom_id == "quest_start":
+        if interaction.user.id != OWNER_ID:
+            view = build_v2_view("❌ Permission Denied", ["Only the bot owner can start quests!"], color=discord.Color.gold())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
+        modal = TokenModal()
+        await interaction.response.send_modal(modal)
+    
+    elif custom_id == "quest_stop":
+        completer = active_completers.get(str(interaction.user.id))
+        
+        if not completer:
+            view = build_v2_view("❌ Error", ["No active quest session found!"], color=discord.Color.gold())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
+        if not completer.running:
+            view = build_v2_view("⚠️ Warning", ["Quest is not running!"], color=discord.Color.gold())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
+        completer.stop()
+        view = build_v2_view("✅ Stopped", ["Stopped auto quest completion."], color=discord.Color.gold())
+        await interaction.response.send_message(view=view, ephemeral=True)
+    
+    elif custom_id == "quest_status":
+        completer = active_completers.get(str(interaction.user.id))
+        
+        if not completer:
+            view = build_v2_view("❌ Error", ["No active quest session found!"], color=discord.Color.gold())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
+        view = completer.create_status_view()
+        
+        message_exists = False
+        if completer.status_message:
+            try:
+                await completer.status_message.fetch()
+                message_exists = True
+            except discord.errors.NotFound:
+                completer.status_message = None
+                message_exists = False
+            except Exception as e:
+                log(f"Error checking message: {e}", "warn")
+                message_exists = False
+        
+        if message_exists:
+            try:
+                await completer.status_message.edit(view=view)
+                await interaction.response.defer()
+                return
+            except Exception as e:
+                log(f"Error editing status message: {e}", "warn")
+                completer.status_message = None
+        
+        await interaction.response.send_message(view=view, ephemeral=True)
+        msg = await interaction.original_response()
+        completer.status_message = msg
+
 # ── Slash Commands ─────────────────────────────────────────────────────────────
-@bot.tree.command(name="quest", description="🎮 Auto complete Discord quests")
+@bot.tree.command(name="quest", description="[Owner] Auto complete Discord quests")
+@is_owner()
 async def quest_command(interaction: discord.Interaction):
-    if not is_owner(interaction):
-        embed = discord.Embed(
-            title="❌ No Permission",
-            description="You don't have permission to use this command!",
-            color=discord.Color.red()
-        )
-        embed.set_footer(text="Only the bot owner can use /quest")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
-    embed = discord.Embed(
-        title="🎮 Quest Auto-Completer",
-        description="Automatically scan, enroll, and complete Discord quests!",
-        color=discord.Color.blue()
-    )
-    
-    embed.add_field(
-        name="📋 Instructions",
-        value="1. Click **Start** to begin\n"
-              "2. Enter your Discord token\n"
-              "3. Bot will automatically complete quests for you\n"
-              "4. Click **Status** to view progress\n"
-              "5. Get **DM notification** when all quests are done!",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="⚠️ Notes",
-        value="• Token is only used in this session\n"
-              "• Bot will auto-enroll and complete quests\n"
-              "• Use **Stop** button to stop anytime\n"
-              "• DM will be sent when all quests are completed",
-        inline=False
-    )
-    
-    embed.set_footer(text="CTDOTEAM Quest Bot v1.0")
-    
     view = QuestView()
-    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.response.send_message(view=view, ephemeral=False)
 
-@bot.tree.command(name="ping", description="🏓 Check bot latency")
+@bot.tree.command(name="ping", description="[Owner] Check bot latency")
+@is_owner()
 async def ping_command(interaction: discord.Interaction):
-    if not is_owner(interaction):
-        embed = discord.Embed(
-            title="❌ No Permission",
-            description="You don't have permission to use this command!",
-            color=discord.Color.red()
-        )
-        embed.set_footer(text="Only the bot owner can use /ping")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
-
     latency = round(bot.latency * 1000)
-    
-    embed = discord.Embed(
-        title="🏓 Pong!",
-        color=discord.Color.green() if latency < 100 else discord.Color.yellow() if latency < 200 else discord.Color.red()
+    color = discord.Color.gold()
+    view = build_v2_view(
+        "🏓 Pong!",
+        [
+            f"**📡 Latency:** `{latency}ms`",
+            f"**🔄 Status:** {'🟢 Online' if latency < 200 else '🟡 Slow' if latency < 400 else '🔴 Very Slow'}"
+        ],
+        color=color
     )
-    
-    embed.add_field(
-        name="📡 Latency",
-        value=f"`{latency}ms`",
-        inline=True
-    )
-    
-    embed.add_field(
-        name="🔄 Status",
-        value="🟢 Online" if latency < 200 else "🟡 Slow" if latency < 400 else "🔴 Very Slow",
-        inline=True
-    )
-    
-    embed.set_footer(text=f"🕐 {datetime.now().strftime('%H:%M:%S')}")
-    
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(view=view, ephemeral=True)
 
 # ── Normal Commands ──────────────────────────────────────────────────────────
 @bot.command(name="sync")
-async def sync_command(ctx):
-    """Sync slash commands (Owner only)"""
-    if ctx.author.id != OWNER_ID:
-        await ctx.send("❌ You don't have permission to use this command!")
-        return
-    
+@commands.is_owner()
+async def sync_command(ctx: commands.Context):
     try:
         synced = await bot.tree.sync()
-        await ctx.send(f"✅ Synced {len(synced)} slash commands!")
+        view = build_v2_view("✅ Success", [f"Synced {len(synced)} slash commands!"], color=discord.Color.gold())
+        await ctx.send(view=view)
     except Exception as e:
-        await ctx.send(f"❌ Error syncing commands: {e}")
+        view = build_v2_view("❌ Error", [str(e)], color=discord.Color.gold())
+        await ctx.send(view=view)
+
+@sync_command.error
+async def sync_error(ctx: commands.Context, error: commands.CommandError):
+    if isinstance(error, commands.NotOwner):
+        view = build_v2_view("❌ Permission Denied", ["Only the bot owner can use this command!"], color=discord.Color.gold())
+        await ctx.send(view=view)
+    else:
+        view = build_v2_view("❌ Error", [str(error)], color=discord.Color.gold())
+        await ctx.send(view=view)
 
 # ── Main Entry ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
