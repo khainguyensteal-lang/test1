@@ -858,7 +858,6 @@ class QuestAutocompleter:
                                 # Vẫn còn quest nhưng không thể auto-accept (unsupported)
                                 Log("⚠️ Some quests are available but cannot be auto-accepted (unsupported tasks)", "warn")
                                 self.stopped_reason = "⚠️ Unsupported quests remaining"
-                                # Không dừng scan, tiếp tục chờ
                             
                             # Dừng scan nếu không còn quest nào
                             if not any_quests_left:
@@ -1192,17 +1191,44 @@ async def on_interaction(interaction: discord.Interaction):
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
-        if not completer.running:
-            view = BuildV2View("⚠️ Warning", ["Quest Is Not Running!"], color=discord.Color.yellow())
-            await interaction.response.send_message(view=view, ephemeral=True)
+        # ── Nếu đã dừng rồi, chỉ hiển thị status ──
+        if not completer.running or completer.should_stop:
+            view = completer.CreateStatusView()
+            if completer.status_message:
+                try:
+                    await completer.status_message.edit(view=view)
+                    await interaction.response.defer()
+                    return
+                except:
+                    await interaction.response.send_message(view=view, ephemeral=True)
+                    msg = await interaction.original_response()
+                    completer.status_message = msg
+            else:
+                await interaction.response.send_message(view=view, ephemeral=True)
+                msg = await interaction.original_response()
+                completer.status_message = msg
             return
         
+        # ── Nếu đang chạy thì dừng ──
         completer.Stop()
         completer.should_stop = True
         completer.stopped_reason = "⏹️ Stopped By User"
-        view = BuildV2View("✅ Stopped", ["Stopped Auto Quest Completion."], color=discord.Color.green())
-        await interaction.response.send_message(view=view, ephemeral=True)
-        await completer.UpdateStatus()
+        
+        view = completer.CreateStatusView()
+        if completer.status_message:
+            try:
+                await completer.status_message.edit(view=view)
+                await interaction.response.defer()
+            except:
+                await interaction.response.send_message(view=view, ephemeral=True)
+                msg = await interaction.original_response()
+                completer.status_message = msg
+        else:
+            await interaction.response.send_message(view=view, ephemeral=True)
+            msg = await interaction.original_response()
+            completer.status_message = msg
+        
+        await interaction.followup.send("✅ Stopped Auto Quest Completion!", ephemeral=True)
     
     elif custom_id == "quest_status":
         if interaction.user.id != OWNER_ID:
@@ -1219,7 +1245,7 @@ async def on_interaction(interaction: discord.Interaction):
         
         view = completer.CreateStatusView()
         
-        # Kiểm tra tin nhắn cũ
+        # ── Luôn hiển thị status ──
         if completer.status_message:
             try:
                 await completer.status_message.edit(view=view)
