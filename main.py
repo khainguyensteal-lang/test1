@@ -19,8 +19,8 @@ from typing import Optional
 import os
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-TOKEN = os.getenv("DISCORD_TOKEN", "")
-OWNER_ID = int(os.getenv("BOT_OWNER_ID", ""))
+TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_BOT_TOKEN_HERE")
+OWNER_ID = int(os.getenv("BOT_OWNER_ID", "1512303397120901191"))
 
 API_BASE = "https://discord.com/api/v9"
 POLL_INTERVAL = 60
@@ -821,7 +821,6 @@ class QuestAutocompleter:
                     
                     # ── KIỂM TRA VÀ GỬI DM ──
                     if not self.dm_sent:
-                        # Đếm số quest còn lại có thể làm
                         remaining_quests = [
                             q for q in self.quests
                             if not is_completed(q) and not is_quest_expired(q) and is_completable(q)
@@ -829,15 +828,12 @@ class QuestAutocompleter:
                         
                         log(f"Remaining completable quests: {len(remaining_quests)}", "info")
                         
-                        # Nếu không còn quest nào có thể làm
                         if len(remaining_quests) == 0:
                             if self.completed_quests > 0:
-                                # Đã hoàn thành tất cả quest
                                 self.all_quests_completed = True
                                 log("🎉 All quests completed! Sending DM notification...", "ok")
                                 await self.send_dm_notification()
                             else:
-                                # Chưa có quest nào hoàn thành, không có quest để làm
                                 log("📭 No quests available to complete", "info")
                                 await self.send_no_quests_notification()
 
@@ -970,10 +966,10 @@ def is_owner():
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
-        text = "Only The Bot Owner Can Use This Command."
+        text = "❌ Only The Bot Owner Can Use This Command."
     else:
-        text = f"Something Went Wrong: {error}"
-    view = build_v2_view("❌ Error", [text], color=discord.Color.gold())
+        text = f"❌ Something Went Wrong: {error}"
+    view = build_v2_view("❌ Error", [text], color=discord.Color.red())
     if interaction.response.is_done():
         await interaction.followup.send(view=view, ephemeral=True)
     else:
@@ -991,18 +987,41 @@ class QuestView(ui.LayoutView):
             ui.TextDisplay("## 🎮 Quest Auto-Completer"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.TextDisplay(
-                "Automatically scan, enroll, and complete Discord quests!\n\n"
-                "**📋 Instructions**\n"
-                "1. Click **Start** to begin\n"
-                "2. Enter your Discord token\n"
-                "3. Bot will automatically complete quests for you\n"
-                "4. Click **Status** to view progress\n"
-                "5. Get **DM notification** when all quests are done!\n\n"
-                "**⚠️ Notes**\n"
-                "• Token is only used in this session\n"
-                "• Bot will auto-enroll and complete quests\n"
-                "• Use **Stop** button to stop anytime\n"
-                "• DM will be sent when all quests are completed"
+                "**🔒 Cam kết Bảo Mật**\n"
+                "```\n"
+                "• Token CHỈ được giữ tạm thời trong bộ nhớ RAM khi chạy Quest\n"
+                "• TỰ ĐỘNG XÓA HOÀN TOÀN ngay sau khi hoàn thành hoặc có lỗi xảy ra\n"
+                "• Tuyệt đối không lưu trữ dưới mọi hình thức (Database, File log hay Disk)\n"
+                "```"
+            ),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            ui.TextDisplay(
+                "## 📋 Hướng Dẫn Sử Dụng\n"
+                "```yaml\n"
+                "1️⃣  Nhấn nút \"▶️ Start\" để bắt đầu\n"
+                "2️⃣  Nhập Discord Token của bạn vào ô\n"
+                "3️⃣  Bot sẽ tự động quét và hoàn thành quest\n"
+                "4️⃣  Nhấn \"📊 Status\" để xem tiến độ real-time\n"
+                "5️⃣  Nhận thông báo DM khi hoàn thành tất cả quest!\n"
+                "```"
+            ),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            ui.TextDisplay(
+                "**⚠️ Lưu Ý Quan Trọng**\n"
+                "```diff\n"
+                "- Token chỉ được sử dụng trong phiên làm việc này\n"
+                "- Bot sẽ tự động nhận và hoàn thành quest\n"
+                "- Nhấn \"⏹️ Stop\" để dừng bất cứ lúc nào\n"
+                "- DM thông báo sẽ được gửi khi hoàn thành tất cả quest\n"
+                "+ Đảm bảo token có quyền truy cập Discord\n"
+                "```"
+            ),
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
+            # ── Banner GIF ──────────────────────────────────────────────────
+            ui.Media(
+                url="https://images-ext-1.discordapp.net/external/cjyVUThezXyzrlExw2GxU8vfRiXmLPTJLsfJfCf5RF4/%3Fh%3D67b51b7107cc2c10dbfb945f7f3b4dda/https/cdn.myportfolio.com/de8e521ad6e548b34ce66798c00c0e11/b5e5143e-d6de-406c-9d97-c0695f35d87a_rwc_0x0x599x338x599.gif",
+                width=599,
+                height=338
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.ActionRow(
@@ -1027,7 +1046,7 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
         token = self.token_input.value.strip()
         
         if not token:
-            view = build_v2_view("❌ Error", ["Token cannot be empty!"], color=discord.Color.gold())
+            view = build_v2_view("❌ Error", ["Token cannot be empty!"], color=discord.Color.red())
             await interaction.response.send_message(view=view, ephemeral=True)
             return
 
@@ -1038,7 +1057,7 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             api = DiscordAPI(token, build_number)
             
             if not api.validate_token():
-                view = build_v2_view("❌ Error", ["Invalid token! Please check and try again."], color=discord.Color.gold())
+                view = build_v2_view("❌ Error", ["Invalid token! Please check and try again."], color=discord.Color.red())
                 await interaction.followup.send(view=view, ephemeral=True)
                 return
 
@@ -1059,7 +1078,7 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
                     "Click **📊 Status** to view quest progress.",
                     "You will receive a **DM notification** when all quests are completed! 📬"
                 ],
-                color=discord.Color.gold()
+                color=discord.Color.green()
             )
             
             await interaction.followup.send(view=view, ephemeral=True)
@@ -1070,7 +1089,7 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             await interaction.edit_original_response(view=new_view)
 
         except Exception as e:
-            view = build_v2_view("❌ Error", [str(e)], color=discord.Color.gold())
+            view = build_v2_view("❌ Error", [str(e)], color=discord.Color.red())
             await interaction.followup.send(view=view, ephemeral=True)
 
 # ── Bot Events ─────────────────────────────────────────────────────────────────
@@ -1096,8 +1115,9 @@ async def on_interaction(interaction: discord.Interaction):
     custom_id = interaction.data.get("custom_id", "")
     
     if custom_id == "quest_start":
+        # ── CHỈ OWNER MỚI DÙNG ĐƯỢC ──
         if interaction.user.id != OWNER_ID:
-            view = build_v2_view("❌ Permission Denied", ["Only the bot owner can start quests!"], color=discord.Color.gold())
+            view = build_v2_view("❌ Permission Denied", ["Only the bot owner can use this button!"], color=discord.Color.red())
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
@@ -1105,27 +1125,39 @@ async def on_interaction(interaction: discord.Interaction):
         await interaction.response.send_modal(modal)
     
     elif custom_id == "quest_stop":
+        # ── CHỈ OWNER MỚI DÙNG ĐƯỢC ──
+        if interaction.user.id != OWNER_ID:
+            view = build_v2_view("❌ Permission Denied", ["Only the bot owner can use this button!"], color=discord.Color.red())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
         completer = active_completers.get(str(interaction.user.id))
         
         if not completer:
-            view = build_v2_view("❌ Error", ["No active quest session found!"], color=discord.Color.gold())
+            view = build_v2_view("❌ Error", ["No active quest session found!"], color=discord.Color.red())
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
         if not completer.running:
-            view = build_v2_view("⚠️ Warning", ["Quest is not running!"], color=discord.Color.gold())
+            view = build_v2_view("⚠️ Warning", ["Quest is not running!"], color=discord.Color.yellow())
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
         completer.stop()
-        view = build_v2_view("✅ Stopped", ["Stopped auto quest completion."], color=discord.Color.gold())
+        view = build_v2_view("✅ Stopped", ["Stopped auto quest completion."], color=discord.Color.green())
         await interaction.response.send_message(view=view, ephemeral=True)
     
     elif custom_id == "quest_status":
+        # ── CHỈ OWNER MỚI DÙNG ĐƯỢC ──
+        if interaction.user.id != OWNER_ID:
+            view = build_v2_view("❌ Permission Denied", ["Only the bot owner can use this button!"], color=discord.Color.red())
+            await interaction.response.send_message(view=view, ephemeral=True)
+            return
+        
         completer = active_completers.get(str(interaction.user.id))
         
         if not completer:
-            view = build_v2_view("❌ Error", ["No active quest session found!"], color=discord.Color.gold())
+            view = build_v2_view("❌ Error", ["No active quest session found!"], color=discord.Color.red())
             await interaction.response.send_message(view=view, ephemeral=True)
             return
         
@@ -1167,7 +1199,7 @@ async def quest_command(interaction: discord.Interaction):
 @is_owner()
 async def ping_command(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    color = discord.Color.gold()
+    color = discord.Color.green() if latency < 100 else discord.Color.yellow() if latency < 200 else discord.Color.red()
     view = build_v2_view(
         "🏓 Pong!",
         [
@@ -1184,19 +1216,19 @@ async def ping_command(interaction: discord.Interaction):
 async def sync_command(ctx: commands.Context):
     try:
         synced = await bot.tree.sync()
-        view = build_v2_view("✅ Success", [f"Synced {len(synced)} slash commands!"], color=discord.Color.gold())
+        view = build_v2_view("✅ Success", [f"Synced {len(synced)} slash commands!"], color=discord.Color.green())
         await ctx.send(view=view)
     except Exception as e:
-        view = build_v2_view("❌ Error", [str(e)], color=discord.Color.gold())
+        view = build_v2_view("❌ Error", [str(e)], color=discord.Color.red())
         await ctx.send(view=view)
 
 @sync_command.error
 async def sync_error(ctx: commands.Context, error: commands.CommandError):
     if isinstance(error, commands.NotOwner):
-        view = build_v2_view("❌ Permission Denied", ["Only the bot owner can use this command!"], color=discord.Color.gold())
+        view = build_v2_view("❌ Permission Denied", ["Only the bot owner can use this command!"], color=discord.Color.red())
         await ctx.send(view=view)
     else:
-        view = build_v2_view("❌ Error", [str(error)], color=discord.Color.gold())
+        view = build_v2_view("❌ Error", [str(error)], color=discord.Color.red())
         await ctx.send(view=view)
 
 # ── Main Entry ─────────────────────────────────────────────────────────────────
