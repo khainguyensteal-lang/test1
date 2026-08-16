@@ -788,7 +788,7 @@ class QuestAutocompleter:
 
             if not self.quests:
                 Log("No Quests Found", "info")
-                await self.UpdateStatus("No Quests Found")
+                await self.UpdateStatus("📭 No Quests Available")
             else:
                 enrolled_count = sum(1 for q in self.quests if IsEnrolled(q))
                 completed_count = sum(1 for q in self.quests if IsCompleted(q))
@@ -819,7 +819,7 @@ class QuestAutocompleter:
                         await self.ProcessQuest(q)
                 else:
                     Log("No Quests Need Completion At This Time", "info")
-                    await self.UpdateStatus("No Quests Need Completion")
+                    await self.UpdateStatus("📭 No Quests Available")
                     
                     # ── Check And Send DM ──
                     if not self.dm_sent:
@@ -849,7 +849,7 @@ class QuestAutocompleter:
                 await asyncio.sleep(1)
 
         Log("Stopped Auto Quest Completion.", "info")
-        await self.UpdateStatus("Stopped")
+        await self.UpdateStatus("⏹️ Stopped")
 
     # ── Progress Bar ──────────────────────────────────────────────────────────
     def CreateProgressBar(self, progress: float, total: float, length: int = 15) -> str:
@@ -979,10 +979,10 @@ async def OnAppCommandError(interaction: discord.Interaction, error: app_command
 
 # ── Quest View ──────────────────────────────────────────────────────────────────
 class QuestView(ui.LayoutView):
-    def __init__(self, completer: QuestAutocompleter = None, user_id: str = None):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.completer = completer
-        self.user_id = user_id
+        self.completer = None
+        self.user_id = None
         self.status_message = None
 
         # ── Media Gallery For Banner Image ──────────────────────────────────
@@ -1035,9 +1035,21 @@ class QuestView(ui.LayoutView):
             # ── Divider ──────────────────────────────────────────────────────
             ui.TextDisplay(
                 "```\n"
-                "═══════════════════════════════════════════════════\n"
-                "               ✦  BOT STATUS  ✦\n"
-                "═══════════════════════════════════════════════════\n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
+                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
+                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
+                "   ███   ███   ███   ███   ███   ███   ███   ███   ███   ███   \n"
+                "   █████████████████████████████████████████████████████████████\n"
+                "   █████████████████████████████████████████████████████████████\n"
                 "```"
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
@@ -1102,9 +1114,6 @@ class TokenModal(discord.ui.Modal, title="Enter Discord Token"):
             await interaction.followup.send(view=view, ephemeral=True)
 
             asyncio.create_task(completer.RunQuests())
-
-            new_view = QuestView(completer, str(interaction.user.id))
-            await interaction.edit_original_response(view=new_view)
 
         except Exception as e:
             view = BuildV2View("❌ Error", [str(e)], color=discord.Color.red())
