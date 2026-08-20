@@ -830,7 +830,6 @@ class QuestAutocompleter:
                 else:
                     Log("No Quests Need Completion At This Time", "info")
                     
-                    # ── Check And Send DM ──
                     if not self.dm_sent:
                         remaining_quests = [
                             q for q in self.quests
@@ -861,7 +860,8 @@ class QuestAutocompleter:
                             
                             if not any_quests_left:
                                 self.should_stop = True
-                                self.running = False                                if self.bot:
+                                self.running = False
+                                if self.bot:
                                     active_completers.pop(str(self.discord_user_id), None)
                                 await self.UpdateStatus()
                                 break
