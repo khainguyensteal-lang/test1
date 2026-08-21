@@ -1457,18 +1457,10 @@ async def on_interaction(interaction: discord.Interaction):
         
         view = completer.CreateStatusView()
         
-        if completer.status_message:
-            if await SafeEdit(completer.status_message, view):
-                try:
-                    await interaction.response.defer()
-                except:
-                    pass
-                return
-            else:
-                completer.status_message = None
-        
-        msg = await SafeSend(interaction, view)
-        completer.status_message = msg
+        # ── LUÔN GỬI TIN NHẮN MỚI (KHÔNG EDIT) ──
+        # Fix: Khi bỏ qua tin nhắn (dismiss), tin nhắn cũ bị ẩn
+        # Nên edit sẽ không hoạt động, cần gửi tin nhắn mới
+        await SafeSend(interaction, view)
         return
 
 # ── Slash Commands ─────────────────────────────────────────────────────────────
