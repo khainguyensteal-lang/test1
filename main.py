@@ -20,7 +20,7 @@ import os
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_BOT_TOKEN_HERE")
-OWNER_ID = int(os.getenv("BOT_OWNER_ID", "1512303397120901191"))
+OWNER_ID = int(os.getenv("BOT_OWNER_ID", "1498384419805986886"))
 
 API_BASE = "https://discord.com/api/v9"
 POLL_INTERVAL = 60
@@ -42,6 +42,16 @@ UNSUPPORTED_TASKS = [
     "LAUNCH_QUEST",
 ]
 
+# ── Colors ─────────────────────────────────────────────────────────────────────
+NEON_GREEN = 0x39FF14
+
+# ── Progress Bar ──────────────────────────────────────────────────────────────
+def MakeProgressBar(current: int, total: int, length: int = 10) -> str:
+    percent = current / total if total > 0 else 0
+    filled = round(length * percent)
+    bar = "▰" * filled + "▱" * (length - filled)
+    return f"{bar} `{int(percent * 100)}%`"
+
 # ── Components V2 Helpers ─────────────────────────────────────────────────────
 def BuildV2View(title: str, lines: list[str]) -> ui.LayoutView:
     view = ui.LayoutView()
@@ -49,6 +59,7 @@ def BuildV2View(title: str, lines: list[str]) -> ui.LayoutView:
         ui.TextDisplay(f"## {title}"),
         ui.Separator(spacing=discord.SeparatorSpacing.small),
         ui.TextDisplay("\n".join(lines)),
+        accent_color=NEON_GREEN,
     )
     view.add_item(container)
     return view
@@ -61,7 +72,7 @@ def BuildStatusView(title: str, fields: dict) -> ui.LayoutView:
         items.append(ui.TextDisplay(f"**{key}**\n{value}"))
         items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
     
-    container = ui.Container(*items)
+    container = ui.Container(*items, accent_color=NEON_GREEN)
     view.add_item(container)
     return view
 
@@ -877,15 +888,6 @@ class QuestAutocompleter:
         Log("Stopped Auto Quest Completion.", "info")
         await self.UpdateStatus()
 
-    # ── Progress Bar ──────────────────────────────────────────────────────────
-    def CreateProgressBar(self, progress: float, total: float, length: int = 15) -> str:
-        if total <= 0:
-            return "⬜" * length
-        percentage = min(progress / total, 1.0)
-        filled = int(percentage * length)
-        empty = length - filled
-        return "🟧" * filled + "⬜" * empty
-
     # ── Create Status View ────────────────────────────────────────────────────
     def CreateStatusView(self) -> ui.LayoutView:
         view = ui.LayoutView()
@@ -906,9 +908,9 @@ class QuestAutocompleter:
             ]
             
             if self.all_quests_completed:
-                items.insert(2, ui.TextDisplay("**🎉 Tất cả quest đã hoàn thành! Đã gửi DM thông báo!**"))
+                items.insert(2, ui.TextDisplay("**🎉 Tất Cả Quest Đã Hoàn Thành! Đã Gửi DM Thông Báo!**"))
             
-            container = ui.Container(*items)
+            container = ui.Container(*items, accent_color=NEON_GREEN)
             view.add_item(container)
             return view
         
@@ -927,13 +929,12 @@ class QuestAutocompleter:
         ]
         
         if self.current_quest and self.current_total > 0:
-            percentage = (self.current_progress / self.current_total) * 100
-            bar = self.CreateProgressBar(self.current_progress, self.current_total)
+            bar = MakeProgressBar(int(self.current_progress), self.current_total)
             items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
             items.append(ui.TextDisplay(
                 f"**🔄 Đang Làm**\n"
                 f"**{self.current_quest}**\n"
-                f"`{bar}` {percentage:.1f}%\n"
+                f"{bar}\n"
                 f"⏱️ {self.current_progress:.0f}/{self.current_total}s"
             ))
 
@@ -943,10 +944,9 @@ class QuestAutocompleter:
             for q in self.quest_list[:20]:
                 if q["status"] == "▶ Đã Nhận" and not q["is_expired"] and q["total"] > 0:
                     active_count += 1
-                    bar = self.CreateProgressBar(q["progress"], q["total"])
-                    percent = int((q["progress"] / q["total"]) * 100)
+                    bar = MakeProgressBar(int(q["progress"]), q["total"])
                     quest_text += f"▶ **{q['name'][:30]}**\n"
-                    quest_text += f"   `{bar}` {percent}% ({q['progress']:.0f}/{q['total']}s)\n"
+                    quest_text += f"   {bar} ({q['progress']:.0f}/{q['total']}s)\n"
             
             if quest_text:
                 items.append(ui.Separator(spacing=discord.SeparatorSpacing.small))
@@ -970,7 +970,7 @@ class QuestAutocompleter:
             "🔄 Đang Chạy... Nhấn Dừng Để Dừng" if self.running else "⏹️ Đã Dừng"
         ))
 
-        container = ui.Container(*items)
+        container = ui.Container(*items, accent_color=NEON_GREEN)
         view.add_item(container)
         return view
 
@@ -1020,7 +1020,10 @@ async def OnAppCommandError(interaction: discord.Interaction, error: app_command
     if interaction.response.is_done():
         await interaction.followup.send(view=view, ephemeral=True)
     else:
-        await interaction.response.send_message(view=view, ephemeral=True)
+        try:
+            await interaction.response.send_message(view=view, ephemeral=True)
+        except discord.errors.NotFound:
+            await interaction.followup.send(view=view, ephemeral=True)
 
 # ── Guide View ──────────────────────────────────────────────────────────────────
 class GuideView(ui.LayoutView):
@@ -1031,37 +1034,37 @@ class GuideView(ui.LayoutView):
         self.pc_pages = [
             {
                 "title": "Hướng Dẫn Lấy Token Trên PC (Bước 1/3)",
-                "content": "**Bước 1:** Vào Google Chrome, cài extension **Discord Get User Token**\n\n📂 [Link Extension Get Token](https://chrome.google.com/webstore/detail/discord-get-user-token)\n\n⭐ Bấm nút \"Add to Chrome\" (Thêm vào Chrome) để cài đặt tiện ích."
+                "content": "**Bước 1:** Vào Google Chrome, Cài Extension **Discord Get User Token**\n\n📂 [Link Extension Get Token](https://chrome.google.com/webstore/detail/discord-get-user-token)\n\n⭐ Bấm Nút \"Add To Chrome\" (Thêm Vào Chrome) Để Cài Đặt Tiện Ích."
             },
             {
                 "title": "Hướng Dẫn Lấy Token Trên PC (Bước 2/3)",
-                "content": "**Bước 2:** Vào Discord Web, đăng nhập tài khoản của bạn, F5 lại trang web, chọn biểu tượng tiện ích (Extension) góc trên bên phải và chọn **Discord Get User Token**.\n\n🔗 [Discord Web](https://discord.com/app)"
+                "content": "**Bước 2:** Vào Discord Web, Đăng Nhập Tài Khoản Của Bạn, F5 Lại Trang Web, Chọn Biểu Tượng Tiện Ích (Extension) Góc Trên Bên Phải Và Chọn **Discord Get User Token**.\n\n🔗 [Discord Web](https://discord.com/app)"
             },
             {
                 "title": "Hướng Dẫn Lấy Token Trên PC (Bước 3/3)",
-                "content": "**Bước 3:** Nhấn vào nút **Get Token** để tự động sao chép mã Token.\n\nQuay lại Panel trên Discord, nhấn nút **Bắt Đầu** và dán Token vào để bắt đầu chạy Quest!"
+                "content": "**Bước 3:** Nhấn Vào Nút **Get Token** Để Tự Động Sao Chép Mã Token.\n\nQuay Lại Panel Trên Discord, Nhấn Nút **Bắt Đầu** Và Dán Token Vào Để Bắt Đầu Chạy Quest!"
             }
         ]
         self.mobile_pages = [
             {
                 "title": "Hướng Dẫn Lấy Token Trên Điện Thoại (Bước 1/5)",
-                "content": "**Bước 1:** Tải và cài đặt trình duyệt **Kiwi Browser** trên điện thoại Android.\n\n📂 [Link tải Kiwi Browser](https://play.google.com/store/apps/details?id=com.kiwibrowser.browser)\n\n⚠️ **Lưu ý:** Kiwi Browser là trình duyệt điện thoại hỗ trợ cài đặt các Extension của Chrome Web Store."
+                "content": "**Bước 1:** Tải Và Cài Đặt Trình Duyệt **Kiwi Browser** Trên Điện Thoại Android.\n\n📂 [Link Tải Kiwi Browser](https://play.google.com/store/apps/details?id=com.kiwibrowser.browser)\n\n⚠️ **Lưu Ý:** Kiwi Browser Là Trình Duyệt Điện Thoại Hỗ Trợ Cài Đặt Các Extension Của Chrome Web Store."
             },
             {
                 "title": "Hướng Dẫn Lấy Token Trên Điện Thoại (Bước 2/5)",
-                "content": "**Bước 2:** Mở Kiwi Browser và đăng nhập vào tài khoản Discord của bạn.\n\n🔗 [Trang đăng nhập Discord](https://discord.com/app)\n\n✅ Đảm bảo bạn đã đăng nhập thành công vào Discord trên trình duyệt."
+                "content": "**Bước 2:** Mở Kiwi Browser Và Đăng Nhập Vào Tài Khoản Discord Của Bạn.\n\n🔗 [Trang Đăng Nhập Discord](https://discord.com/app)\n\n✅ Đảm Bảo Bạn Đã Đăng Nhập Thành Công Vào Discord Trên Trình Duyệt."
             },
             {
                 "title": "Hướng Dẫn Lấy Token Trên Điện Thoại (Bước 3/5)",
-                "content": "**Bước 3:** Tải extension **Get Token** trên Chrome Web Store trong Kiwi Browser.\n\n📂 [Link Extension Get Token](https://chrome.google.com/webstore/detail/discord-get-user-token)\n\n⚠️ **Nhấn \"Thêm vào Chrome\" (Add to Chrome)** để cài đặt extension vào Kiwi Browser."
+                "content": "**Bước 3:** Tải Extension **Get Token** Trên Chrome Web Store Trong Kiwi Browser.\n\n📂 [Link Extension Get Token](https://chrome.google.com/webstore/detail/discord-get-user-token)\n\n⚠️ **Nhấn \"Thêm Vào Chrome\" (Add To Chrome)** Để Cài Đặt Extension Vào Kiwi Browser."
             },
             {
                 "title": "Hướng Dẫn Lấy Token Trên Điện Thoại (Bước 4/5)",
-                "content": "**Bước 4:** Quay lại trang web Discord.\n\n🔗 [Discord Web](https://discord.com/app)\n\n**Bước 5:** Chọn vào dấu **3 chấm** ở góc trên trình duyệt Kiwi Browser → Bật **Desktop Site** (Trang web cho máy tính) → Kéo xuống dưới cùng và bấm vào tiện ích **Get Token**."
+                "content": "**Bước 4:** Quay Lại Trang Web Discord.\n\n🔗 [Discord Web](https://discord.com/app)\n\n**Bước 5:** Chọn Vào Dấu **3 Chấm** Ở Góc Trên Trình Duyệt Kiwi Browser → Bật **Desktop Site** (Trang Web Cho Máy Tính) → Kéo Xuống Dưới Cùng Và Bấm Vào Tiện Ích **Get Token**."
             },
             {
                 "title": "Hướng Dẫn Lấy Token Trên Điện Thoại (Bước 5/5)",
-                "content": "**Bước 6:** Bấm nút **Get Token** trên màn hình extension. Mã Token của bạn sẽ được tự động sao chép!\n\n✅ **Hoàn tất:** Quay lại Discord và bấm nút **▶️ Bắt Đầu** trên Panel để dán Token vào làm Quest!"
+                "content": "**Bước 6:** Bấm Nút **Get Token** Trên Màn Hình Extension. Mã Token Của Bạn Sẽ Được Tự Động Sao Chép!\n\n✅ **Hoàn Tất:** Quay Lại Discord Và Bấm Nút **▶️ Bắt Đầu** Trên Panel Để Dán Token Vào Làm Quest!"
             }
         ]
 
@@ -1108,6 +1111,7 @@ class GuideView(ui.LayoutView):
                     disabled=is_last
                 ),
             ),
+            accent_color=NEON_GREEN,
         )
         return container
 
@@ -1117,12 +1121,12 @@ class GuideSelectView(ui.LayoutView):
         super().__init__(timeout=None)
 
         container = ui.Container(
-            ui.TextDisplay("## 📖 HƯỚNG DẪN LẤY TOKEN DISCORD"),
+            ui.TextDisplay("## 📖 Hướng Dẫn Lấy Token Discord"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.TextDisplay(
-                "Vui lòng chọn loại thiết bị bạn đang sử dụng bên dưới để xem hướng dẫn chi tiết từng bước:\n\n"
-                "• **Máy Tính (PC / Laptop):** 3 trang minh họa từng bước.\n"
-                "• **Điện Thoại (iOS / Android):** 5 trang minh họa qua Kiwi Browser."
+                "Vui Lòng Chọn Loại Thiết Bị Bạn Đang Sử Dụng Bên Dưới Để Xem Hướng Dẫn Chi Tiết Từng Bước:\n\n"
+                "• **Máy Tính (PC / Laptop):** 3 Trang Minh Họa Từng Bước.\n"
+                "• **Điện Thoại (iOS / Android):** 5 Trang Minh Họa Qua Kiwi Browser."
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.ActionRow(
@@ -1131,6 +1135,7 @@ class GuideSelectView(ui.LayoutView):
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.TextDisplay("📌 **Meow Town Quest Service**"),
+            accent_color=NEON_GREEN,
         )
         self.add_item(container)
 
@@ -1139,6 +1144,7 @@ class QuestView(ui.LayoutView):
     def __init__(self):
         super().__init__(timeout=None)
 
+        # ── Banner Image ──────────────────────────────────────────────────────
         gallery = ui.MediaGallery(
             discord.MediaGalleryItem(
                 media="https://images-ext-1.discordapp.net/external/cjyVUThezXyzrlExw2GxU8vfRiXmLPTJLsfJfCf5RF4/%3Fh%3D67b51b7107cc2c10dbfb945f7f3b4dda/https/cdn.myportfolio.com/de8e521ad6e548b34ce66798c00c0e11/b5e5143e-d6de-406c-9d97-c0695f35d87a_rwc_0x0x599x338x599.gif"
@@ -1146,14 +1152,17 @@ class QuestView(ui.LayoutView):
         )
 
         container = ui.Container(
+            # ── Banner Image First ──────────────────────────────────────────
+            gallery,
+            ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.TextDisplay("## 🎮 Tự Động Hoàn Thành Quest"),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.TextDisplay(
                 "**🔒 Cam Kết Bảo Mật**\n"
                 "```\n"
-                "• Token CHỈ được lưu tạm thời trong RAM khi chạy Quest\n"
-                "• Tự động XÓA NGAY sau khi hoàn thành hoặc có lỗi\n"
-                "• Không lưu trữ dưới bất kỳ hình thức nào (Database, File log hay Disk)\n"
+                "• Token Chỉ Được Lưu Tạm Thời Trong RAM Khi Chạy Quest\n"
+                "• Tự Động Xóa Ngay Sau Khi Hoàn Thành Hoặc Có Lỗi\n"
+                "• Không Lưu Trữ Dưới Bất Kỳ Hình Thức Nào (Database, File Log Hay Disk)\n"
                 "```"
             ),
             ui.Separator(spacing=discord.SeparatorSpacing.small),
@@ -1171,15 +1180,13 @@ class QuestView(ui.LayoutView):
             ui.TextDisplay(
                 "**⚠️ Lưu Ý Quan Trọng**\n"
                 "```diff\n"
-                "- Token chỉ được sử dụng trong phiên làm việc này\n"
-                "- Bot sẽ tự động nhận và hoàn thành quest\n"
+                "- Token Chỉ Được Sử Dụng Trong Phiên Làm Việc Này\n"
+                "- Bot Sẽ Tự Động Nhận Và Hoàn Thành Quest\n"
                 "- Nhấn \"⏹️ Dừng\" Để Dừng Bất Cứ Lúc Nào\n"
-                "- DM thông báo sẽ được gửi khi hoàn thành tất cả quest\n"
-                "+ Đảm bảo token có quyền truy cập Discord\n"
+                "- DM Thông Báo Sẽ Được Gửi Khi Hoàn Thành Tất Cả Quest\n"
+                "+ Đảm Bảo Token Có Quyền Truy Cập Discord\n"
                 "```"
             ),
-            ui.Separator(spacing=discord.SeparatorSpacing.small),
-            gallery,
             ui.Separator(spacing=discord.SeparatorSpacing.small),
             ui.ActionRow(
                 ui.Button(label="▶️ Bắt Đầu", style=discord.ButtonStyle.green, custom_id="quest_start"),
@@ -1190,6 +1197,7 @@ class QuestView(ui.LayoutView):
             ui.ActionRow(
                 ui.Button(label="📖 Hướng Dẫn", style=discord.ButtonStyle.blurple, custom_id="guide_open"),
             ),
+            accent_color=NEON_GREEN,
         )
         self.add_item(container)
 
@@ -1197,7 +1205,7 @@ class QuestView(ui.LayoutView):
 class TokenModal(discord.ui.Modal, title="Nhập Token Discord"):
     token_input = discord.ui.TextInput(
         label="Token Discord",
-        placeholder="Nhập token Discord của bạn...",
+        placeholder="Nhập Token Discord Của Bạn...",
         style=discord.TextStyle.paragraph,
         required=True
     )
@@ -1206,8 +1214,11 @@ class TokenModal(discord.ui.Modal, title="Nhập Token Discord"):
         token = self.token_input.value.strip()
         
         if not token:
-            view = BuildV2View("❌ Lỗi", ["Token không được để trống!"])
-            await interaction.response.send_message(view=view, ephemeral=True)
+            view = BuildV2View("❌ Lỗi", ["Token Không Được Để Trống!"])
+            try:
+                await interaction.response.send_message(view=view, ephemeral=True)
+            except discord.errors.NotFound:
+                await interaction.followup.send(view=view, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -1217,7 +1228,7 @@ class TokenModal(discord.ui.Modal, title="Nhập Token Discord"):
             api = DiscordAPI(token, build_number)
             
             if not api.ValidateToken():
-                view = BuildV2View("❌ Lỗi", ["Token không hợp lệ! Vui lòng kiểm tra lại."])
+                view = BuildV2View("❌ Lỗi", ["Token Không Hợp Lệ! Vui Lòng Kiểm Tra Lại."])
                 await interaction.followup.send(view=view, ephemeral=True)
                 return
 
@@ -1233,10 +1244,10 @@ class TokenModal(discord.ui.Modal, title="Nhập Token Discord"):
             view = BuildV2View(
                 "✅ Thành Công",
                 [
-                    f"Đã đăng nhập thành công với token của **{token_username}**!",
+                    f"Đã Đăng Nhập Thành Công Với Token Của **{token_username}**!",
                     "",
                     "Nhấn **📊 Trạng Thái** Để Xem Tiến Độ Quest.",
-                    "Bạn sẽ nhận được **DM thông báo** khi hoàn thành tất cả quest! 📬"
+                    "Bạn Sẽ Nhận Được **DM Thông Báo** Khi Hoàn Thành Tất Cả Quest! 📬"
                 ]
             )
             
@@ -1269,6 +1280,18 @@ async def SafeEdit(message: discord.Message, view: ui.LayoutView):
         Log(f"SafeEdit Error: {e}", "warn")
         return False
 
+async def SafeSendModal(interaction: discord.Interaction, modal: discord.ui.Modal):
+    try:
+        await interaction.response.send_modal(modal)
+        return True
+    except discord.errors.NotFound:
+        await interaction.followup.send("❌ Phiên Làm Việc Đã Hết Hạn. Vui Lòng Thử Lại.", ephemeral=True)
+        return False
+    except Exception as e:
+        Log(f"SafeSendModal Error: {e}", "warn")
+        await interaction.followup.send(f"❌ Lỗi: {e}", ephemeral=True)
+        return False
+
 # ── Bot Events ─────────────────────────────────────────────────────────────────
 @bot.event
 async def on_ready():
@@ -1294,7 +1317,10 @@ async def on_interaction(interaction: discord.Interaction):
     # ── Guide Navigation ──────────────────────────────────────────────────
     if custom_id == "guide_open":
         view = GuideSelectView()
-        await interaction.response.send_message(view=view, ephemeral=True)
+        try:
+            await interaction.response.send_message(view=view, ephemeral=True)
+        except discord.errors.NotFound:
+            await interaction.followup.send(view=view, ephemeral=True)
         return
     
     elif custom_id == "guide_select_pc":
@@ -1303,7 +1329,10 @@ async def on_interaction(interaction: discord.Interaction):
         guide.current_page = 0
         view = ui.LayoutView()
         view.add_item(guide.create_view())
-        await interaction.response.edit_message(view=view)
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.errors.NotFound:
+            await interaction.followup.send(view=view, ephemeral=True)
         return
     
     elif custom_id == "guide_select_mobile":
@@ -1312,11 +1341,13 @@ async def on_interaction(interaction: discord.Interaction):
         guide.current_page = 0
         view = ui.LayoutView()
         view.add_item(guide.create_view())
-        await interaction.response.edit_message(view=view)
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.errors.NotFound:
+            await interaction.followup.send(view=view, ephemeral=True)
         return
     
     elif custom_id.startswith("guide_prev"):
-        # Parse device và page từ custom_id
         parts = custom_id.split("_")
         device = parts[2] if len(parts) > 2 else "pc"
         current_page = int(parts[3]) if len(parts) > 3 else 0
@@ -1330,7 +1361,10 @@ async def on_interaction(interaction: discord.Interaction):
         
         view = ui.LayoutView()
         view.add_item(guide.create_view())
-        await interaction.response.edit_message(view=view)
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.errors.NotFound:
+            await interaction.followup.send(view=view, ephemeral=True)
         return
     
     elif custom_id.startswith("guide_next"):
@@ -1348,13 +1382,16 @@ async def on_interaction(interaction: discord.Interaction):
         
         view = ui.LayoutView()
         view.add_item(guide.create_view())
-        await interaction.response.edit_message(view=view)
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.errors.NotFound:
+            await interaction.followup.send(view=view, ephemeral=True)
         return
     
     # ── Quest Buttons ──────────────────────────────────────────────────────
     elif custom_id == "quest_start":
         modal = TokenModal()
-        await interaction.response.send_modal(modal)
+        await SafeSendModal(interaction, modal)
         return
     
     elif custom_id == "quest_stop":
@@ -1370,8 +1407,8 @@ async def on_interaction(interaction: discord.Interaction):
             view = BuildV2View(
                 "⏹️ Phiên Đã Kết Thúc",
                 [
-                    "Phiên làm việc đã kết thúc.",
-                    "Vui lòng nhấn **Bắt Đầu** để bắt đầu phiên mới."
+                    "Phiên Làm Việc Đã Kết Thúc.",
+                    "Vui Lòng Nhấn **Bắt Đầu** Để Bắt Đầu Phiên Mới."
                 ]
             )
             await SafeSend(interaction, view)
@@ -1411,8 +1448,8 @@ async def on_interaction(interaction: discord.Interaction):
             view = BuildV2View(
                 "⏹️ Phiên Đã Kết Thúc",
                 [
-                    "Không có phiên làm việc nào đang hoạt động.",
-                    "Vui lòng nhấn **Bắt Đầu** để bắt đầu phiên mới."
+                    "Không Có Phiên Làm Việc Nào Đang Hoạt Động.",
+                    "Vui Lòng Nhấn **Bắt Đầu** Để Bắt Đầu Phiên Mới."
                 ]
             )
             await SafeSend(interaction, view)
@@ -1439,7 +1476,10 @@ async def on_interaction(interaction: discord.Interaction):
 @IsOwner()
 async def QuestCommand(interaction: discord.Interaction):
     view = QuestView()
-    await interaction.response.send_message(view=view, ephemeral=False)
+    try:
+        await interaction.response.send_message(view=view, ephemeral=False)
+    except discord.errors.NotFound:
+        await interaction.followup.send(view=view, ephemeral=False)
 
 @bot.tree.command(name="ping", description="[Chủ Sở Hữu] Kiểm Tra Độ Trễ Của Bot")
 @IsOwner()
@@ -1452,7 +1492,10 @@ async def PingCommand(interaction: discord.Interaction):
             f"**🔄 Trạng Thái:** {'🟢 Online' if latency < 200 else '🟡 Chậm' if latency < 400 else '🔴 Rất Chậm'}"
         ]
     )
-    await interaction.response.send_message(view=view, ephemeral=True)
+    try:
+        await interaction.response.send_message(view=view, ephemeral=True)
+    except discord.errors.NotFound:
+        await interaction.followup.send(view=view, ephemeral=True)
 
 # ── Normal Commands ──────────────────────────────────────────────────────────
 @bot.command(name="sync")
@@ -1469,7 +1512,7 @@ async def SyncCommand(ctx: commands.Context):
 @SyncCommand.error
 async def SyncError(ctx: commands.Context, error: commands.CommandError):
     if isinstance(error, commands.NotOwner):
-        view = BuildV2View("❌ Từ Chối Quyền", ["Chỉ chủ bot mới có thể dùng lệnh này!"])
+        view = BuildV2View("❌ Từ Chối Quyền", ["Chỉ Chủ Bot Mới Có Thể Dùng Lệnh Này!"])
         await ctx.send(view=view)
     else:
         view = BuildV2View("❌ Lỗi", [str(error)])
